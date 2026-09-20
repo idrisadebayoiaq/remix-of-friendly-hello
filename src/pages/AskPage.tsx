@@ -30,6 +30,10 @@ const AskPage = () => {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user?.id) {
+      toast.error('Please sign in again');
+      return;
+    }
     if (!inviteType) {
       toast.error('Please select an invite type');
       return;
@@ -40,7 +44,7 @@ const AskPage = () => {
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
     const { error } = await supabase.from('invites').insert({
-      sender_id: user!.id,
+      sender_id: user.id,
       receiver_email: 'link-invite@lovli.app',
       receiver_name: receiverName.trim(),
       invite_type: inviteType as any,
@@ -50,7 +54,7 @@ const AskPage = () => {
     });
 
     if (error) {
-      toast.error('Failed to create invite');
+      toast.error(error.message || 'Failed to create invite');
       setSending(false);
       return;
     }

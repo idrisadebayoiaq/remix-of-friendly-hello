@@ -10,7 +10,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Bell, Eye, Moon, MessageCircle, Shield, UserX, Globe, Volume2, VolumeX, ShieldCheck, AlertTriangle, LogOut, Trash2, RotateCcw, Download } from 'lucide-react';
 import BackHeader from '@/components/BackHeader';
-import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { getSoundEnabled, setSoundEnabled } from '@/lib/sounds';
@@ -33,41 +32,161 @@ const CURRENCIES = [
   { code: 'GHS', symbol: 'GH₵', name: 'Ghanaian Cedi' },
 ];
 
+const DEFAULT_SETTINGS = {
+  email_notifications: true,
+  invite_notifications: true,
+  daily_question_notifications: true,
+  profile_visibility: true,
+  allow_connection_requests: true,
+  allow_requests_when_dating: false,
+  push_messages: true,
+  push_connection_requests: true,
+  push_dating_requests: true,
+  push_daily_questions: true,
+  push_community: true,
+  push_invites: true,
+  push_appeals: true,
+  push_reports: true,
+};
+
 const SettingsPage = () => {
   const { user, profile, refreshProfile, signOut } = useAuth();
   const navigate = useNavigate();
   const [settings, setSettings] = useState<any>(null);
-  const [darkMode, setDarkMode] = useState(() => document.documentElement.classList.contains('dark'));
+  const [loadingSettings, setLoadingSettings] = useState(true);
+  const [darkMode, setDarkMode] = useState(() =>
+    typeof document !== 'undefined' && document.documentElement.classList.contains('dark'),
+  );
   const [soundEnabled, setSoundEnabledState] = useState(() => getSoundEnabled());
   const [blockedUsers, setBlockedUsers] = useState<any[]>([]);
   const [trustedName, setTrustedName] = useState(profile?.trusted_contact_name || '');
   const [trustedPhone, setTrustedPhone] = useState(profile?.trusted_contact_phone || '');
   const [currency, setCurrency] = useState((profile as any)?.preferred_currency || 'USD');
-  const [timezone, setTimezone] = useState((profile as any)?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const [timezone, setTimezone] = useState(
+    (profile as any)?.timezone ||
+      (typeof Intl !== 'undefined'
+        ? Intl.DateTimeFormat().resolvedOptions().timeZone
+        : 'UTC'),
+  );
   const [country, setCountry] = useState((profile as any)?.country || '');
   const deferredPrompt = useInstallPrompt();
   const [showInstallModal, setShowInstallModal] = useState(false);
   const isStandalone = typeof window !== 'undefined' && window.matchMedia('(display-mode: standalone)').matches;
 
   useEffect(() => {
+    if (!profile) return;
+    setTrustedName(profile.trusted_contact_name || '');
+    setTrustedPhone(profile.trusted_contact_phone || '');
+    setCurrency((profile as any)?.preferred_currency || 'USD');
+    setTimezone((profile as any)?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone);
+    setCountry((profile as any)?.country || '');
+  }, [profile]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setLoadingSettings(false);
+      return;
+    }
+
+    let cancelled = false;
     const load = async () => {
-      const { data } = await supabase.from('user_settings').select('*').eq('user_id', user!.id).single();
-      setSettings(data);
-      const { data: blocks } = await supabase.from('blocked_users').select('*').eq('blocker_id', user!.id);
-      if (blocks?.length) {
-        const enriched = await Promise.all(blocks.map(async b => {
-          const { data: p } = await supabase.from('profiles').select('full_name, username').eq('user_id', b.blocked_id).single();
-          return { ...b, profile: p };
-        }));
-        setBlockedUsers(enriched);
+      setLoadingSettings(true);
+      try {
+        const { data, error } = await supabase
+          .from('user_settings')
+          .select('*')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (cancelled) return;
+
+        if (error) {
+          console.error('Failed to load settings', error);
+          setSettings({ ...DEFAULT_SETTINGS, user_id: user.id });
+          toast.error('Could not load settings from server');
+        } else if (!data) {
+          const { data: created, error: insertError } = await supabase
+            .from('user_settings')
+            .insert({ user_id: user.id })
+            .select('*')
+            .maybeSingle();
+
+          if (cancelled) return;
+
+          if (insertError || !created) {
+            console.error('Failed to create settings', insertError);
+            setSettings({ ...DEFAULT_SETTINGS, user_id: user.id });
+          } else {
+            setSettings(created);
+          }
+        } else {
+          setSettings(data);
+        }
+
+        const { data: blocks } = await supabase
+          .from('blocked_users')
+          .select('*')
+          .eq('blocker_id', user.id);
+
+        if (cancelled) return;
+
+        if (blocks?.length) {
+          const enriched = await Promise.all(
+            blocks.map(async (b) => {
+              const { data: p } = await supabase
+                .from('profiles')
+                .select('full_name, username')
+                .eq('user_id', b.blocked_id)
+                .maybeSingle();
+              return { ...b, profile: p };
+            }),
+          );
+          if (!cancelled) setBlockedUsers(enriched);
+        } else {
+          setBlockedUsers([]);
+        }
+      } finally {
+        if (!cancelled) setLoadingSettings(false);
       }
     };
+
     load();
-  }, [user]);
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   const updateSetting = async (key: string, value: boolean) => {
-    setSettings((prev: any) => ({ ...prev, [key]: value }));
-    await supabase.from('user_settings').update({ [key]: value } as any).eq('user_id', user!.id);
+    if (!user?.id) {
+      toast.error('Please sign in again');
+      return;
+    }
+
+    setSettings((prev: any) => ({ ...(prev || DEFAULT_SETTINGS), [key]: value }));
+
+    const { error } = await supabase
+      .from('user_settings')
+      .update({ [key]: value } as any)
+      .eq('user_id', user.id);
+
+    if (error) {
+      toast.error(error.message || 'Failed to update settings');
+      return;
+    }
+
+    // Keep Discover visibility in sync (uses profiles.profile_visible)
+    if (key === 'profile_visibility') {
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ profile_visible: value } as any)
+        .eq('user_id', user.id);
+      if (profileError) {
+        toast.error(profileError.message || 'Failed to update profile visibility');
+        return;
+      }
+      await refreshProfile();
+    }
+
     toast.success('Settings updated');
   };
 
@@ -84,24 +203,83 @@ const SettingsPage = () => {
   };
 
   const saveTrustedContact = async () => {
-    await supabase.from('profiles').update({ trusted_contact_name: trustedName.trim(), trusted_contact_phone: trustedPhone.trim() } as any).eq('user_id', user!.id);
+    if (!user?.id) {
+      toast.error('Please sign in again');
+      return;
+    }
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({
+        trusted_contact_name: trustedName.trim(),
+        trusted_contact_phone: trustedPhone.trim(),
+      } as any)
+      .eq('user_id', user.id)
+      .select('user_id')
+      .maybeSingle();
+
+    if (error) {
+      toast.error(error.message || 'Failed to save trusted contact');
+      return;
+    }
+    if (!data) {
+      toast.error('Could not save trusted contact. Please try again.');
+      return;
+    }
     await refreshProfile();
     toast.success('Trusted contact saved 🛡️');
   };
 
   const saveGlobalSettings = async () => {
-    await supabase.from('profiles').update({ preferred_currency: currency, timezone, country: country.trim() } as any).eq('user_id', user!.id);
+    if (!user?.id) {
+      toast.error('Please sign in again');
+      return;
+    }
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({
+        preferred_currency: currency,
+        timezone,
+        country: country.trim(),
+      } as any)
+      .eq('user_id', user.id)
+      .select('user_id')
+      .maybeSingle();
+
+    if (error) {
+      toast.error(error.message || 'Failed to save global settings');
+      return;
+    }
+    if (!data) {
+      toast.error('Could not save settings. Please try again.');
+      return;
+    }
     await refreshProfile();
     toast.success('Global settings saved');
   };
 
   const unblockUser = async (blockId: string) => {
     await supabase.from('blocked_users').delete().eq('id', blockId);
-    setBlockedUsers(prev => prev.filter(b => b.id !== blockId));
+    setBlockedUsers((prev) => prev.filter((b) => b.id !== blockId));
     toast.success('User unblocked');
   };
 
-  if (!settings) return null;
+  if (!user) {
+    return (
+      <div className="p-4 space-y-4">
+        <BackHeader title="Settings" />
+        <p className="text-sm text-muted-foreground text-center py-12">Please sign in to manage settings.</p>
+      </div>
+    );
+  }
+
+  if (loadingSettings || !settings) {
+    return (
+      <div className="p-4 space-y-4">
+        <BackHeader title="Settings" />
+        <p className="text-sm text-muted-foreground text-center py-12">Loading settings…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 space-y-4">
@@ -229,7 +407,11 @@ const SettingsPage = () => {
             variant="outline"
             className="w-full rounded-2xl"
             onClick={async () => {
-              await supabase.from('user_settings').update({ has_seen_onboarding: false, onboarding_completed_at: null } as any).eq('user_id', user!.id);
+              const { error } = await supabase.from('user_settings').update({ has_seen_onboarding: false, onboarding_completed_at: null } as any).eq('user_id', user.id);
+              if (error) {
+                toast.error(error.message || 'Failed to reset onboarding');
+                return;
+              }
               toast.success('Onboarding reset! Visit Home to see it again.');
             }}
           >
@@ -238,10 +420,10 @@ const SettingsPage = () => {
         </CardContent>
       </Card>
 
-      <AdminOrSupportButton userId={user!.id} navigate={navigate} />
+      <AdminOrSupportButton userId={user.id} navigate={navigate} />
 
       {/* Sign Out + Delete Account */}
-      <AccountActions userId={user!.id} signOut={signOut} />
+      <AccountActions userId={user.id} signOut={signOut} />
     </div>
   );
 };

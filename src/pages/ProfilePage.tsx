@@ -8,11 +8,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { User, Settings, Camera, Edit3, MapPin, Heart, MessageCircle, Trophy, CheckCircle, Image, Cake, Download } from 'lucide-react';
+import { Settings, Camera, Edit3, MapPin, Heart, MessageCircle, Trophy, CheckCircle, Cake, Download } from 'lucide-react';
 import BackHeader from '@/components/BackHeader';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useInstallPrompt } from '@/hooks/useInstallPrompt';
@@ -48,9 +47,9 @@ const ProfilePage = () => {
   const [myQuizResults, setMyQuizResults] = useState<any[]>([]);
   const [myMemories, setMyMemories] = useState<any[]>([]);
 
-  // Keep edit form in sync with profile loaded from signup / DB
+  // Keep view/edit form in sync with profile, but don't clobber in-progress edits
   useEffect(() => {
-    if (!profile) return;
+    if (!profile || editing) return;
     setFullName(profile.full_name || '');
     setUsername(profile.username || '');
     setBio(profile.bio || '');
@@ -60,7 +59,22 @@ const ProfilePage = () => {
     setInterests(profile.interests || []);
     setDateOfBirth((profile as any).date_of_birth || '');
     setDobPublic((profile as any).dob_public ?? true);
-  }, [profile]);
+  }, [profile, editing]);
+
+  const startEditing = () => {
+    if (profile) {
+      setFullName(profile.full_name || '');
+      setUsername(profile.username || '');
+      setBio(profile.bio || '');
+      setCity(profile.city || '');
+      setCountry((profile as any).country || '');
+      setRelationshipStatus(profile.relationship_status || 'single');
+      setInterests(profile.interests || []);
+      setDateOfBirth((profile as any).date_of_birth || '');
+      setDobPublic((profile as any).dob_public ?? true);
+    }
+    setEditing(true);
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -80,7 +94,12 @@ const ProfilePage = () => {
   }, [user]);
 
   const handleSave = async () => {
-    if (!profile?.user_id) return;
+    const userId = user?.id || profile?.user_id;
+    if (!userId) {
+      toast.error('Please sign in again to save your profile');
+      return;
+    }
+
     const cleanUsername = username.toLowerCase().replace(/[^a-z0-9_]/g, '').trim();
     if (cleanUsername.length < 3) {
       toast.error('Username must be at least 3 characters');
@@ -91,48 +110,103 @@ const ProfilePage = () => {
       return;
     }
 
+    const allowedStatuses = Object.keys(statusLabels);
+    const safeStatus = allowedStatuses.includes(relationshipStatus) ? relationshipStatus : 'single';
+
     setSaving(true);
-    const { error } = await supabase.from('profiles').update({
-      full_name: fullName.trim(),
-      username: cleanUsername,
-      bio: bio.trim(),
-      city: city.trim(),
-      country: country.trim(),
-      relationship_status: relationshipStatus as any,
-      interests,
-      date_of_birth: dateOfBirth || null,
-      dob_public: dobPublic,
-    } as any).eq('user_id', profile.user_id);
-
-    if (error) {
-      if (error.message?.toLowerCase().includes('unique') || error.code === '23505') {
-        toast.error('That username is already taken');
-      } else {
-        toast.error(error.message || 'Failed to update profile');
+    try {
+      // Soft unique check so conflicts show a clear toast (not a silent failure)
+      if (cleanUsername !== (profile?.username || '').toLowerCase()) {
+        const { data: taken } = await supabase
+          .from('profiles')
+          .select('user_id')
+          .eq('username', cleanUsername)
+          .neq('user_id', userId)
+          .maybeSingle();
+        if (taken) {
+          toast.error('That username is already taken');
+          return;
+        }
       }
-      setSaving(false);
-      return;
-    }
 
-    toast.success('Profile updated! 💕');
-    await refreshProfile();
-    setEditing(false);
-    setSaving(false);
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({
+          full_name: fullName.trim(),
+          username: cleanUsername,
+          bio: bio.trim() || null,
+          city: city.trim() || null,
+          country: country.trim() || null,
+          relationship_status: safeStatus as any,
+          interests,
+          date_of_birth: dateOfBirth || null,
+          dob_public: dobPublic,
+        } as any)
+        .eq('user_id', userId)
+        .select('user_id')
+        .maybeSingle();
+
+      if (error) {
+        const msg = error.message?.toLowerCase() || '';
+        if (error.code === '23505' || msg.includes('unique') || msg.includes('duplicate')) {
+          toast.error('That username is already taken');
+        } else if (msg.includes('invalid input value for enum') || msg.includes('relationship_status')) {
+          toast.error('Invalid relationship status');
+        } else {
+          toast.error(error.message || 'Failed to update profile');
+        }
+        return;
+      }
+
+      // PostgREST can return no error + 0 rows when RLS blocks the update
+      if (!data) {
+        toast.error('Could not update profile. Please try again.');
+        return;
+      }
+
+      toast.success('Profile updated! 💕');
+      await refreshProfile();
+      setEditing(false);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to update profile');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleAvatarUpload = async (file: File) => {
-    if (!profile?.user_id) return;
+    const userId = user?.id || profile?.user_id;
+    if (!userId) {
+      toast.error('Please sign in again');
+      return;
+    }
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { toast.error('Only JPG, PNG, WEBP'); return; }
     if (file.size > 5 * 1024 * 1024) { toast.error('Max 5MB'); return; }
     setUploadingAvatar(true);
-    const ext = file.name.split('.').pop();
-    const path = `${profile.user_id}/avatar.${ext}`;
-    await supabase.storage.from('avatars').upload(path, file, { upsert: true });
-    const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
-    await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('user_id', profile.user_id);
-    toast.success('Avatar updated! 📸');
-    await refreshProfile();
-    setUploadingAvatar(false);
+    try {
+      const ext = file.name.split('.').pop();
+      const path = `${userId}/avatar.${ext}`;
+      const { error: uploadError } = await supabase.storage.from('avatars').upload(path, file, { upsert: true });
+      if (uploadError) {
+        toast.error(uploadError.message || 'Failed to upload avatar');
+        return;
+      }
+      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({ avatar_url: publicUrl })
+        .eq('user_id', userId)
+        .select('user_id')
+        .maybeSingle();
+      if (error || !data) {
+        toast.error(error?.message || 'Failed to save avatar');
+        return;
+      }
+      toast.success('Avatar updated! 📸');
+      await refreshProfile();
+    } finally {
+      setUploadingAvatar(false);
+    }
   };
 
   const toggleInterest = (tag: string) => {
@@ -173,7 +247,14 @@ const ProfilePage = () => {
               <p className="font-bold">{profile?.full_name}</p>
               <p className="text-xs text-muted-foreground">@{profile?.username}</p>
             </div>
-            <Button variant="outline" size="sm" className="rounded-xl" onClick={() => setEditing(!editing)}><Edit3 size={14} className="mr-1" /> Edit</Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-xl"
+              onClick={() => (editing ? setEditing(false) : startEditing())}
+            >
+              <Edit3 size={14} className="mr-1" /> {editing ? 'Cancel' : 'Edit'}
+            </Button>
           </div>
 
           {editing ? (
@@ -224,9 +305,9 @@ const ProfilePage = () => {
                   <Badge variant="outline" className="rounded-full"><Cake size={10} className="mr-0.5" /> {new Date((profile as any).date_of_birth).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</Badge>
                 )}
               </div>
-              {profile?.interests?.length > 0 && (
+              {(profile?.interests?.length ?? 0) > 0 && (
                 <div className="flex flex-wrap gap-1 pt-1">
-                  {profile.interests.map((i: string) => <Badge key={i} variant="secondary" className="text-[10px] rounded-full">{i}</Badge>)}
+                  {(profile?.interests || []).map((i: string) => <Badge key={i} variant="secondary" className="text-[10px] rounded-full">{i}</Badge>)}
                 </div>
               )}
             </div>
