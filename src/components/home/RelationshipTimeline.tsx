@@ -82,7 +82,7 @@ const RelationshipTimeline = () => {
               Start your love journey! Send an invite or explore profiles.
             </p>
             <div className="flex gap-2">
-              <Button size="sm" className="rounded-xl lovli-gradient text-primary-foreground" onClick={() => navigate('/ask')}>
+              <Button size="sm" className="rounded-xl lovli-gradient text-primary-foreground" onClick={() => navigate('/meet?tab=invite')}>
                 <Send size={14} className="mr-1" /> Create Invite
               </Button>
               <Button size="sm" variant="outline" className="rounded-xl" onClick={() => navigate('/discover')}>

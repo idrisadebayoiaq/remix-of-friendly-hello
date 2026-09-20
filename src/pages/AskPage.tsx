@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
@@ -21,6 +22,8 @@ const inviteTypes = [
 
 const AskPage = () => {
   const { user } = useAuth();
+  const location = useLocation();
+  const embedded = location.pathname.startsWith('/meet');
   const [receiverName, setReceiverName] = useState('');
   const [inviteType, setInviteType] = useState('');
   const [message, setMessage] = useState('');
@@ -39,6 +42,15 @@ const AskPage = () => {
       return;
     }
     setSending(true);
+
+    const { data: cooldown } = await supabase.rpc('can_send_invite_to_name' as any, {
+      p_receiver_name: receiverName.trim(),
+    });
+    if (cooldown && (cooldown as any).ok === false) {
+      toast.error((cooldown as any).error || 'Please wait before inviting this person again');
+      setSending(false);
+      return;
+    }
 
     const token = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
@@ -93,7 +105,13 @@ const AskPage = () => {
 
   return (
     <div className="p-4 space-y-4">
-      <BackHeader title="Send an Invite 💕" />
+      {!embedded && <BackHeader title="Send an Invite 💕" />}
+      {embedded && (
+        <div className="space-y-1">
+          <h2 className="text-lg font-bold font-display">Send an Invite</h2>
+          <p className="text-xs text-muted-foreground">For someone you already know — share a link, they choose Yes or No.</p>
+        </div>
+      )}
 
       {generatedLink ? (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>

@@ -17,6 +17,13 @@ dist-ssr
 .env.*
 !.env.example
 
+# Firebase / FCM credentials (never commit)
+google-services.json
+google-services*.json
+*-firebase-adminsdk-*.json
+**/firebase-adminsdk*.json
+service-account*.json
+
 # Cursor
 .cursor/
 

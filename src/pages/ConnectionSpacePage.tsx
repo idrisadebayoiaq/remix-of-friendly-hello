@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback, useLayoutEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, MessageCircle, Send, Image, HelpCircle, Gamepad2, Camera, Heart, X, Lock, Trophy, Mic, Square, Flag, Ban, Shield, Sparkles, Crown, MoreHorizontal, Pencil, Trash2, Copy, CheckCheck, HeartHandshake, Gift, Music, Smile, Reply, SmilePlus } from 'lucide-react';
+import { ArrowLeft, MessageCircle, Send, Image, HelpCircle, Gamepad2, Camera, Heart, X, Lock, Trophy, Mic, Square, Flag, Ban, Shield, Sparkles, Crown, MoreHorizontal, Pencil, Trash2, Copy, CheckCheck, HeartHandshake, Gift, Music, Smile, Reply, SmilePlus, CalendarHeart } from 'lucide-react';
 import { playNotificationSound } from '@/lib/sounds';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -15,7 +15,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import SurpriseMessages from '@/components/connection/SurpriseMessages';
 import MicPermissionModal from '@/components/connection/MicPermissionModal';
 import SharedSongs from '@/components/connection/SharedSongs';
+import DatePlanPanel from '@/components/connection/DatePlanPanel';
 import EmojiStickerPicker from '@/components/chat/EmojiStickerPicker';
+import { bondTypeBadge, canUseMatchMarry, normalizeConnectionOrigin } from '@/lib/connectionOrigins';
 
 const romanticGames = [
   { id: 'truth', name: 'Truth or Dare 💕', desc: 'Romantic truth & dare prompts', prompts: ['What made you first notice me?', 'Dare: Send a voice note saying 3 things you love about me', "What is your favorite memory of us?", 'Dare: Plan our next date right now', 'What do you find most attractive about me?'] },
@@ -55,6 +57,8 @@ const ConnectionSpacePage = () => {
   const { connectionId } = useParams<{ connectionId: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get('tab') || 'wall';
   const [connection, setConnection] = useState<any>(null);
   const [otherUser, setOtherUser] = useState<any>(null);
   const [messages, setMessages] = useState<any[]>([]);
@@ -92,6 +96,8 @@ const ConnectionSpacePage = () => {
   const [gameCurrentAnswer, setGameCurrentAnswer] = useState('');
   const [partnerGameAnswers, setPartnerGameAnswers] = useState<Record<number, string>>({});
   const [gameCompleted, setGameCompleted] = useState(false);
+  const [partnerOnline, setPartnerOnline] = useState(false);
+  const [incomingGameInvite, setIncomingGameInvite] = useState<{ id: string; game_type: string } | null>(null);
 
   // Matchmaking
   const [mmAnswers, setMmAnswers] = useState<string[]>(Array(5).fill(''));
@@ -123,6 +129,9 @@ const ConnectionSpacePage = () => {
   // Derived: connection type
   const isRomantic = connection?.relationship_track === 'romantic';
   const isFriendship = connection?.relationship_track === 'friendship';
+  const isInviteBond = normalizeConnectionOrigin(connection?.origin_type) === 'invite';
+  const isDatingBond = normalizeConnectionOrigin(connection?.origin_type) === 'dating';
+  const allowMatchMarry = canUseMatchMarry(connection?.origin_type);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     messagesEndRef.current?.scrollIntoView({ behavior, block: 'end' });
@@ -301,9 +310,54 @@ const ConnectionSpacePage = () => {
             }
           }
         })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'game_sessions', filter: `connection_id=eq.${connectionId}` },
+        (payload) => {
+          const session = payload.new as any;
+          if (!session || session.created_by === user?.id) return;
+          setIncomingGameInvite({ id: session.id, game_type: session.game_type });
+          toast.message('Partner started a game', { description: 'Open Games to join' });
+        })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_sessions', filter: `connection_id=eq.${connectionId}` },
+        (payload) => {
+          const session = payload.new as any;
+          if (!session || session.id !== gameSessionId) return;
+          if (session.status === 'completed') {
+            setGameCompleted(true);
+          }
+        })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'game_answers' },
+        (payload) => {
+          const ans = payload.new as any;
+          if (!ans || ans.user_id === user?.id) return;
+          if (gameSessionId && ans.session_id !== gameSessionId) return;
+          if (!gameSessionId && incomingGameInvite && ans.session_id !== incomingGameInvite.id) return;
+          setPartnerGameAnswers((prev) => ({ ...prev, [ans.question_index]: ans.answer }));
+        })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [connectionId, user]);
+  }, [connectionId, user, gameSessionId, incomingGameInvite]);
+
+  // Presence: show when partner is in this connection space
+  useEffect(() => {
+    if (!connectionId || !user || !otherUser?.user_id) return;
+    const channel = supabase.channel(`presence-conn-${connectionId}`, {
+      config: { presence: { key: user.id } },
+    });
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        const online = Object.keys(state).some((id) => id === otherUser.user_id);
+        setPartnerOnline(online);
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({ user_id: user.id, at: Date.now() });
+        }
+      });
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [connectionId, user, otherUser?.user_id]);
 
   const checkSafety = (text: string) => {
     if (safetyAccepted) return true;
@@ -515,23 +569,50 @@ const ConnectionSpacePage = () => {
     toast.success('Report submitted 🛡️');
   };
 
-  // Get correct games based on relationship track
-  const currentGames = isRomantic ? romanticGames : friendlyGames;
+  // Invite + romantic track → romantic; friends → friendly; dating (pre-Match) → both
+  const currentGames = isInviteBond || isRomantic
+    ? romanticGames
+    : isDatingBond
+      ? [...friendlyGames, ...romanticGames]
+      : friendlyGames;
   const allGames = [...romanticGames, ...friendlyGames];
+
+  const joinGameSession = useCallback(async (session: { id: string; game_type: string }) => {
+    setGameSessionId(session.id);
+    setActiveGame(session.game_type);
+    setGamePromptIdx(0);
+    setGameAnswers({});
+    setGameCurrentAnswer('');
+    setPartnerGameAnswers({});
+    setGameCompleted(false);
+    setIncomingGameInvite(null);
+
+    const { data: allAnswers } = await supabase.from('game_answers').select('*').eq('session_id', session.id);
+    const mine: Record<number, string> = {};
+    const theirs: Record<number, string> = {};
+    (allAnswers || []).forEach((a: any) => {
+      if (a.user_id === user?.id) mine[a.question_index] = a.answer;
+      else theirs[a.question_index] = a.answer;
+    });
+    setGameAnswers(mine);
+    setPartnerGameAnswers(theirs);
+    const answered = Object.keys(mine).map(Number);
+    if (answered.length) {
+      const game = [...romanticGames, ...friendlyGames].find((g) => g.id === session.game_type);
+      const nextIdx = Math.min(Math.max(...answered) + 1, (game?.prompts.length || 1) - 1);
+      if (answered.length >= (game?.prompts.length || 0)) setGameCompleted(true);
+      else setGamePromptIdx(nextIdx);
+    }
+  }, [user?.id]);
 
   const startGame = async (gameType: string) => {
     if (!connectionId) return;
     const { data: session } = await supabase.from('game_sessions').insert({
-      connection_id: connectionId, game_type: gameType, created_by: user!.id,
+      connection_id: connectionId, game_type: gameType, created_by: user!.id, status: 'active',
     } as any).select().single();
     if (session) {
-      setGameSessionId(session.id);
-      setActiveGame(gameType);
-      setGamePromptIdx(0);
-      setGameAnswers({});
-      setGameCurrentAnswer('');
-      setPartnerGameAnswers({});
-      setGameCompleted(false);
+      joinGameSession({ id: session.id, game_type: gameType });
+      toast.success(partnerOnline ? 'Game started — partner is online' : 'Game started — waiting for partner');
     }
   };
 
@@ -689,22 +770,36 @@ const ConnectionSpacePage = () => {
   const getDaysFriendship = () => connection?.friendship_started_at ? Math.floor((Date.now() - new Date(connection.friendship_started_at).getTime()) / 86400000) : getDaysTogether();
   const getDaysDating = () => connection?.dating_started_at ? Math.floor((Date.now() - new Date(connection.dating_started_at).getTime()) / 86400000) : 0;
   
-  // Matchmaking unlock logic
-  // Romantic (invite): after 7 days or dating request accepted
-  // Friendship (discover): ONLY when dating request accepted (matchmaking_unlocked_at set)
+  // Matchmaking / Marry: only for in-app bonds (dating/friends) — never invite bonds
+  // Dating-origin bonds: unlock Match after 3 days together (or after dating-request accept)
   const hasPendingOrAcceptedDatingRequest = !!datingRequest || connection?.status === 'dating';
-  const matchmakingUnlocked = isRomantic 
-    ? (getDaysTogether() >= 7 || hasPendingOrAcceptedDatingRequest)
-    : !!(connection as any)?.matchmaking_unlocked_at;
-  const marriageUnlocked = connection?.status === 'dating' && getDaysDating() >= 180;
+  const matchmakingUnlocked = allowMatchMarry && (
+    isDatingBond
+      ? (getDaysTogether() >= 3 || !!(connection as any)?.matchmaking_unlocked_at || hasPendingOrAcceptedDatingRequest)
+      : isFriendship
+        ? !!(connection as any)?.matchmaking_unlocked_at
+        : (getDaysTogether() >= 7 || hasPendingOrAcceptedDatingRequest)
+  );
+  const marriageUnlocked = allowMatchMarry && connection?.status === 'dating' && getDaysDating() >= 180;
 
   if (!connection || !otherUser) return <div className="p-4 text-center text-muted-foreground">Loading...</div>;
 
+  const bond = bondTypeBadge(connection.origin_type);
   const daysTogether = getDaysTogether();
   const daysFriendship = getDaysFriendship();
-  const milestoneLabels = isRomantic ? romanticMilestoneLabels : friendshipMilestoneLabels;
-  const milestoneDays = isFriendship ? daysFriendship : daysTogether;
-  const statusLabel = connection.status === 'married' ? '💍 Married' : connection.status === 'dating' ? '💜 Dating' : isFriendship ? '🤝 Friends' : '💚 Connected';
+  const milestoneLabels = isRomantic || isInviteBond ? romanticMilestoneLabels : friendshipMilestoneLabels;
+  const milestoneDays = isFriendship && !isInviteBond ? daysFriendship : daysTogether;
+  const statusLabel = connection.status === 'married'
+    ? '💍 Married'
+    : connection.status === 'dating'
+      ? '💜 Dating'
+      : isDatingBond
+        ? '💘 Dating match'
+        : isInviteBond
+          ? '💚 Together'
+          : isFriendship
+            ? '🤝 Friends'
+            : '💚 Connected';
   const achieved = milestoneLabels.filter(m => milestoneDays >= m.days);
   const next = milestoneLabels.find(m => milestoneDays < m.days);
 
@@ -712,8 +807,9 @@ const ConnectionSpacePage = () => {
   const tabs = [
     { value: 'wall', icon: <MessageCircle size={12} />, label: 'Chat' },
     { value: 'question', icon: <HelpCircle size={12} />, label: 'Daily Q' },
-    { value: 'memories', icon: <Camera size={12} />, label: isFriendship ? 'Memories' : 'Memories' },
+    { value: 'memories', icon: <Camera size={12} />, label: 'Memories' },
     { value: 'games', icon: <Gamepad2 size={12} />, label: 'Games' },
+    { value: 'dates', icon: <CalendarHeart size={12} />, label: 'Dates' },
     { value: 'music', icon: <Music size={12} />, label: 'Music' },
     { value: 'milestones', icon: <Trophy size={12} />, label: 'Miles' },
   ];
@@ -724,9 +820,17 @@ const ConnectionSpacePage = () => {
   if (matchmakingUnlocked) tabs.push({ value: 'matchmaking', icon: <Sparkles size={12} />, label: 'Match' });
   if (marriageUnlocked && isRomantic) tabs.push({ value: 'marriage', icon: <Crown size={12} />, label: 'Marry' });
 
-  // Can show "Start Dating" button for friendship connections or connected romantic connections
-  const canShowDatingButton = (isFriendship && connection.status !== 'dating' && !datingRequest) || 
-    (isRomantic && connection.status === 'connected' && !datingRequest);
+  // Start Dating / Match path: friendships + dating bonds only — not invite couples
+  const canShowDatingButton = allowMatchMarry && (
+    (isFriendship && connection.status !== 'dating' && !datingRequest) ||
+    (!isInviteBond && isRomantic && connection.status === 'connected' && !datingRequest)
+  );
+
+  // Co-date planner: primary on invite; unlock on dating after Match (status dating / married)
+  const datePlanUnlocked = isInviteBond || connection.status === 'dating' || connection.status === 'married';
+  const datePlanLockReason = isDatingBond
+    ? 'Unlock after you Match seriously (Dating status).'
+    : 'Co-date planner is for invite couples, or dating bonds after Match.';
 
   return (
     <div className="flex flex-col h-[calc(100vh-5rem)]">
@@ -737,9 +841,18 @@ const ConnectionSpacePage = () => {
           onClick={() => navigate(`/u/${otherUser.username}`)}>
           {otherUser.avatar_url ? <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" /> : otherUser.full_name?.[0] || '?'}
         </div>
-        <div className="flex-1">
-          <p className="text-sm font-bold">{otherUser.full_name}</p>
-          <p className="text-[10px] text-muted-foreground">{statusLabel} • {milestoneDays}d {isFriendship ? '🤝' : '💕'}</p>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <p className="text-sm font-bold truncate">{otherUser.full_name}</p>
+            <span
+              className={`w-2 h-2 rounded-full shrink-0 ${partnerOnline ? 'bg-emerald-500' : 'bg-muted-foreground/40'}`}
+              title={partnerOnline ? 'Online here' : 'Offline'}
+            />
+          </div>
+          <p className="text-[10px] text-muted-foreground truncate">
+            {bond.label} · {statusLabel} · {milestoneDays}d
+            {isInviteBond ? ' · Match hidden' : ''}
+          </p>
         </div>
         <div className="flex gap-1">
           {canShowDatingButton && (
@@ -767,7 +880,7 @@ const ConnectionSpacePage = () => {
         </div>
       )}
 
-      <Tabs defaultValue="wall" className="flex-1 flex flex-col overflow-hidden">
+      <Tabs defaultValue={initialTab} className="flex-1 flex flex-col overflow-hidden">
         <div className="overflow-x-auto shrink-0">
           <TabsList className="flex mx-3 mt-2 w-max gap-0.5">
             {tabs.map(t => <TabsTrigger key={t.value} value={t.value} className="text-[9px] gap-0.5 px-2">{t.icon}<span className="hidden sm:inline">{t.label}</span></TabsTrigger>)}
@@ -1021,14 +1134,17 @@ const ConnectionSpacePage = () => {
           </div>
         </TabsContent>
 
-        {/* Games - uses currentGames based on relationship track */}
+        {/* Games — available for invite, dating, and friends bonds; live sync via realtime */}
         <TabsContent value="games" className="flex-1 overflow-y-auto p-4 m-0">
           {activeGame ? (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="font-bold text-sm">{allGames.find(g => g.id === activeGame)?.name}</h3>
-                <Button variant="ghost" size="sm" onClick={() => { setActiveGame(null); setGamePromptIdx(0); setGameSessionId(null); setGameAnswers({}); setGameCompleted(false); }}><X size={16} /></Button>
+                <Button variant="ghost" size="sm" onClick={() => { setActiveGame(null); setGamePromptIdx(0); setGameSessionId(null); setGameAnswers({}); setGameCompleted(false); setPartnerGameAnswers({}); }}><X size={16} /></Button>
               </div>
+              {Object.keys(partnerGameAnswers).length > 0 && !gameCompleted && (
+                <p className="text-[10px] text-center text-muted-foreground">Partner answers sync live</p>
+              )}
 
               {gameCompleted ? (
                 <div className="space-y-3">
@@ -1083,7 +1199,29 @@ const ConnectionSpacePage = () => {
             </div>
           ) : (
             <div className="space-y-3">
-              <p className="text-sm font-bold text-muted-foreground">{isFriendship ? 'Choose a Friendly Game 🎮' : 'Choose a Game 🎮'}</p>
+              {incomingGameInvite && (
+                <Card className="shadow-sm border-primary/30 bg-primary/5">
+                  <CardContent className="p-4 space-y-2">
+                    <p className="text-sm font-bold">
+                      {otherUser.full_name} started {allGames.find(g => g.id === incomingGameInvite.game_type)?.name || 'a game'}
+                    </p>
+                    <Button
+                      className="w-full rounded-xl lovli-gradient text-primary-foreground font-bold"
+                      onClick={() => joinGameSession(incomingGameInvite)}
+                    >
+                      Join live game
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-bold text-muted-foreground">
+                  {isDatingBond ? 'Dating & friend games' : isInviteBond || isRomantic ? 'Couple games' : 'Friendly games'}
+                </p>
+                <p className={`text-[10px] ${partnerOnline ? 'text-emerald-600' : 'text-muted-foreground'}`}>
+                  {partnerOnline ? 'Partner online' : 'Partner offline'}
+                </p>
+              </div>
               {currentGames.map(game => (
                 <Card key={game.id} className="shadow-sm cursor-pointer hover:shadow-md transition-shadow" onClick={() => startGame(game.id)}>
                   <CardContent className="p-4 flex items-center gap-3">
@@ -1106,6 +1244,18 @@ const ConnectionSpacePage = () => {
         {/* Music / Our Playlist */}
         <TabsContent value="music" className="flex-1 overflow-y-auto p-4 m-0">
           <SharedSongs connectionId={connectionId!} />
+        </TabsContent>
+
+        {/* Co-date AI planner */}
+        <TabsContent value="dates" className="flex-1 overflow-y-auto p-4 m-0">
+          <DatePlanPanel
+            connectionId={connectionId!}
+            userId={user!.id}
+            otherUserId={otherUser.user_id}
+            otherUserName={otherUser.full_name || 'Partner'}
+            unlocked={datePlanUnlocked}
+            lockReason={datePlanLockReason}
+          />
         </TabsContent>
 
         {/* Milestones */}

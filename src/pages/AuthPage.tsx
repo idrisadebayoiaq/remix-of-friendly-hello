@@ -7,9 +7,11 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { motion } from 'framer-motion';
 import { Heart, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
+import { PROFILE_GENDERS } from '@/lib/dating';
 
 const AuthPage = () => {
   const { user, loading, signIn, signUp } = useAuth();
@@ -25,6 +27,7 @@ const AuthPage = () => {
   const [signupUsername, setSignupUsername] = useState('');
   const [signupEmail, setSignupEmail] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
+  const [signupGender, setSignupGender] = useState('');
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -58,6 +61,7 @@ const AuthPage = () => {
     const { error } = await signUp(signupEmail, signupPassword, {
       full_name: signupName,
       username: signupUsername.toLowerCase().replace(/[^a-z0-9_]/g, ''),
+      ...(signupGender ? { gender: signupGender } : {}),
     });
     if (error) {
       toast.error(error.message);
@@ -136,6 +140,19 @@ const AuthPage = () => {
                   <div className="space-y-2">
                     <Label htmlFor="signup-email">Email</Label>
                     <Input id="signup-email" type="email" placeholder="you@email.com" value={signupEmail} onChange={e => setSignupEmail(e.target.value)} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Gender</Label>
+                    <Select value={signupGender || undefined} onValueChange={setSignupGender}>
+                      <SelectTrigger className="rounded-xl">
+                        <SelectValue placeholder="Select (needed for Dating)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PROFILE_GENDERS.map((g) => (
+                          <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="signup-password">Password</Label>

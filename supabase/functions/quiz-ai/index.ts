@@ -15,7 +15,17 @@ function buildPrompts(quizType: string, inputs: QuizInputs) {
   let systemPrompt = "";
   let userPrompt = "";
 
-  if (quizType === "gift") {
+  if (quizType === "co-date") {
+    systemPrompt =
+      "You are a collaborative couple date planner. Write a warm, specific shared date plan both partners can review. Use short sections with emojis. No markdown code fences.";
+    const ideas = Array.isArray(inputs.ideas) ? (inputs.ideas as string[]).join("; ") : "";
+    userPrompt = `Create a co-date plan for two partners.
+City: ${inputs.city || "their city"}
+Budget: ${inputs.budget || "moderate"}
+Vibe / preference: ${inputs.preference || "romantic and fun"}
+Extra ideas from them: ${ideas || "none"}
+Include: title line, afternoon/evening flow (3–5 beats with timing), where to go, what to eat, conversation starters (3), and one optional surprise. Keep it under 220 words. Return plain text only.`;
+  } else if (quizType === "gift") {
     systemPrompt =
       "You are a romantic gift advisor. Return exactly 5 creative, thoughtful gift suggestions. Be specific and creative. Format as a JSON array of strings.";
     userPrompt = `Suggest 5 gifts for someone in a "${inputs.relationLevel}" relationship stage with a budget of "${inputs.budget || "any"}". Return ONLY a JSON array of 5 strings, no markdown.`;

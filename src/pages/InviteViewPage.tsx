@@ -61,7 +61,7 @@ const InviteViewPage = () => {
         if (error) { toast.error(error.message); setResponding(false); return; }
         const result = data as any;
         if (result?.error) { toast.error(result.error); setResponding(false); return; }
-        toast.success('Connection created! 💕');
+        toast.success('You said yes! Chat & planning are open 💕');
         const connId = result?.connection_id;
         navigate(connId ? `/connection/${connId}` : '/chats');
       } else {
@@ -69,7 +69,7 @@ const InviteViewPage = () => {
         if (error) { toast.error(error.message); setResponding(false); return; }
         const result = data as any;
         if (result?.error) { toast.error(result.error); setResponding(false); return; }
-        toast.info('Invite declined');
+        toast.info('Invite declined. You can both keep using Lovli.');
         navigate('/home');
       }
     } catch {

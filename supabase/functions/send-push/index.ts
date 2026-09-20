@@ -43,16 +43,33 @@ Deno.serve(async (req) => {
     );
 
     // Check user's push notification preferences
+    // Keep in sync with src/lib/notificationTypes.ts
     const notifType = data?.type || '';
     const prefMap: Record<string, string> = {
       'new_message': 'push_messages',
       'connection_request': 'push_connection_requests',
+      'request_accepted': 'push_connection_requests',
+      'request_declined': 'push_connection_requests',
       'dating_request': 'push_dating_requests',
+      'dating_match_request': 'push_dating_requests',
+      'dating_match_approved': 'push_dating_requests',
+      'dating_match_declined': 'push_dating_requests',
+      'dating_instant_match': 'push_dating_requests',
       'daily_question': 'push_daily_questions',
       'community_like': 'push_community',
       'community_comment': 'push_community',
+      'post_liked': 'push_community',
+      'post_reacted': 'push_community',
+      'post_shared': 'push_community',
+      'post_comment': 'push_community',
+      'new_follow': 'push_community',
       'new_invite': 'push_invites',
       'invite_response': 'push_invites',
+      'invite_accepted': 'push_invites',
+      'invite_declined': 'push_invites',
+      'date_plan_review': 'push_messages',
+      'date_plan_updated': 'push_messages',
+      'date_plan_agreed': 'push_messages',
       'appeal_approved': 'push_appeals',
       'appeal_rejected': 'push_appeals',
       'new_report': 'push_reports',

@@ -12,6 +12,7 @@ import BackHeader from '@/components/BackHeader';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { useSearchParams } from 'react-router-dom';
+import { awardQuizBadge } from '@/lib/badges';
 
 const TONES = [
   { value: 'romantic', label: '🌹 Romantic' },
@@ -75,6 +76,12 @@ const QuizzesPage = () => {
     return data.result;
   };
 
+  const afterQuiz = async (quizType: string) => {
+    if (!user) return;
+    const earned = await awardQuizBadge(user.id, quizType);
+    if (earned.length) toast.success(`Badge unlocked: ${earned.join(', ')}`);
+  };
+
   const runGiftQuiz = async () => {
     if (!relationLevel) { toast.error('Select relationship level'); return; }
     setGiftLoading(true);
@@ -84,6 +91,7 @@ const QuizzesPage = () => {
       try { suggestions = JSON.parse(result); } catch { suggestions = result.split('\n').filter((l: string) => l.trim()).slice(0, 5); }
       setGiftResults(suggestions);
       await supabase.from('quiz_results').insert({ user_id: user!.id, quiz_type: 'gift', inputs: { relationLevel, budget, tone, detailLevel } as any, results: { suggestions } as any });
+      await afterQuiz('gift');
       toast.success('AI gift suggestions ready! 🎁✨');
     } catch (e: any) { toast.error(e.message || 'Failed'); }
     setGiftLoading(false);
@@ -95,6 +103,7 @@ const QuizzesPage = () => {
       const result = await callQuizAI('date', { city: city || 'a typical city', budget: `${dateBudget} ${userCurrency}`, preference, tone, detailLevel });
       setDateResult(result);
       await supabase.from('quiz_results').insert({ user_id: user!.id, quiz_type: 'date', inputs: { dateBudget, city, preference, tone, detailLevel } as any, results: { plan: result } as any });
+      await afterQuiz('date');
       toast.success('AI date plan ready! 📅✨');
     } catch (e: any) { toast.error(e.message || 'Failed'); }
     setDateLoading(false);
@@ -114,6 +123,7 @@ const QuizzesPage = () => {
     } catch { setLlExplanation(''); }
     await supabase.from('quiz_results').insert({ user_id: user!.id, quiz_type: 'love_language', inputs: { answers: llAnswers } as any, results: { language: result } as any });
     await supabase.from('profiles').update({ love_language: result }).eq('user_id', user!.id);
+    await afterQuiz('love_language');
     toast.success('Love language discovered! ❤️');
     setLlLoading(false);
   };
@@ -125,6 +135,7 @@ const QuizzesPage = () => {
       const result = await callQuizAI('compatibility', { partnerTraits, myInterests: profile?.interests || [], tone, detailLevel });
       setCompatResult(result);
       await supabase.from('quiz_results').insert({ user_id: user!.id, quiz_type: 'compatibility', inputs: { partnerTraits } as any, results: { analysis: result } as any });
+      await afterQuiz('compatibility');
       toast.success('Compatibility analysis ready! 💕');
     } catch (e: any) { toast.error(e.message || 'Failed'); }
     setCompatLoading(false);

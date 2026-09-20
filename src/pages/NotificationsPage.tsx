@@ -7,17 +7,27 @@ import { Heart, MessageCircle, Share2, SmilePlus, Reply, Check, CheckCheck } fro
 import BackHeader from '@/components/BackHeader';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { resolveNotificationPath } from '@/lib/notificationNav';
 
 const typeIcons: Record<string, any> = {
   post_liked: Heart,
   post_reacted: SmilePlus,
   post_commented: MessageCircle,
+  post_comment: MessageCircle,
   post_replied: Reply,
   post_shared: Share2,
   invite_accepted: Heart,
   invite_declined: Heart,
   connection_request: Heart,
   dating_request: Heart,
+  dating_match_request: Heart,
+  dating_match_approved: Heart,
+  dating_match_declined: Heart,
+  dating_instant_match: Heart,
+  date_plan_review: Heart,
+  date_plan_updated: Heart,
+  date_plan_agreed: Heart,
+  new_follow: Heart,
 };
 
 const NotificationsPage = () => {
@@ -70,9 +80,7 @@ const NotificationsPage = () => {
 
   const handleNotificationClick = (n: any) => {
     markAsRead(n.id);
-    const postId = n.data?.post_id;
-    if (postId) navigate(`/post/${postId}`);
-    else if (n.data?.connection_id) navigate(`/connection/${n.data.connection_id}`);
+    navigate(resolveNotificationPath(n));
   };
 
   const unreadCount = notifications.filter(n => !n.is_read).length;

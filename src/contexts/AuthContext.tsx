@@ -70,9 +70,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const { data: existing } = await supabase
       .from('profiles')
-      .select('user_id, full_name, username, email')
+      .select('user_id, full_name, username, email, gender')
       .eq('user_id', userId)
       .maybeSingle();
+
+    const genderMeta = metadata?.gender;
+    const validGender =
+      genderMeta === 'man' || genderMeta === 'woman' || genderMeta === 'other' || genderMeta === 'prefer_not'
+        ? genderMeta
+        : null;
 
     if (!existing) {
       await supabase.from('profiles').insert({
@@ -81,6 +87,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         full_name: fullName || 'Lovli User',
         username,
         relationship_status: 'single',
+        ...(validGender ? { gender: validGender } : {}),
       } as any);
       return;
     }
@@ -91,6 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       patch.username = username;
     }
     if (!existing.email?.trim() && email) patch.email = email;
+    if (!(existing as any).gender && validGender) patch.gender = validGender;
 
     if (Object.keys(patch).length > 0) {
       await supabase.from('profiles').update(patch as any).eq('user_id', userId);
@@ -157,6 +165,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         data: {
           full_name: metadata?.full_name || '',
           username: metadata?.username || '',
+          ...(metadata?.gender ? { gender: metadata.gender } : {}),
         },
         emailRedirectTo: window.location.origin,
       },

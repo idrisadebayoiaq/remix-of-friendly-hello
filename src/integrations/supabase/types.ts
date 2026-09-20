@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.1"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -643,6 +643,65 @@ export type Database = {
         }
         Relationships: []
       }
+      user_follows: {
+        Row: {
+          id: string
+          follower_id: string
+          following_id: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          follower_id: string
+          following_id: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          follower_id?: string
+          following_id?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      dating_match_requests: {
+        Row: {
+          connection_id: string | null
+          created_at: string
+          from_user_id: string
+          id: string
+          status: string
+          to_user_id: string
+          updated_at: string
+        }
+        Insert: {
+          connection_id?: string | null
+          created_at?: string
+          from_user_id: string
+          id?: string
+          status?: string
+          to_user_id: string
+          updated_at?: string
+        }
+        Update: {
+          connection_id?: string | null
+          created_at?: string
+          from_user_id?: string
+          id?: string
+          status?: string
+          to_user_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dating_match_requests_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dating_profiles: {
         Row: {
           bio: string | null
@@ -652,7 +711,9 @@ export type Database = {
           is_active: boolean
           location: string | null
           looking_for: string
+          match_mode: string
           photos: string[] | null
+          preferred_genders: string[]
           updated_at: string
           user_id: string
         }
@@ -664,7 +725,9 @@ export type Database = {
           is_active?: boolean
           location?: string | null
           looking_for?: string
+          match_mode?: string
           photos?: string[] | null
+          preferred_genders?: string[]
           updated_at?: string
           user_id: string
         }
@@ -676,7 +739,9 @@ export type Database = {
           is_active?: boolean
           location?: string | null
           looking_for?: string
+          match_mode?: string
           photos?: string[] | null
+          preferred_genders?: string[]
           updated_at?: string
           user_id?: string
         }
@@ -1168,6 +1233,7 @@ export type Database = {
           dob_public: boolean | null
           email: string
           full_name: string
+          gender: Database["public"]["Enums"]["profile_gender"] | null
           id: string
           interests: string[] | null
           is_banned: boolean | null
@@ -1198,6 +1264,7 @@ export type Database = {
           dob_public?: boolean | null
           email: string
           full_name?: string
+          gender?: Database["public"]["Enums"]["profile_gender"] | null
           id?: string
           interests?: string[] | null
           is_banned?: boolean | null
@@ -1228,6 +1295,7 @@ export type Database = {
           dob_public?: boolean | null
           email?: string
           full_name?: string
+          gender?: Database["public"]["Enums"]["profile_gender"] | null
           id?: string
           interests?: string[] | null
           is_banned?: boolean | null
@@ -1492,6 +1560,21 @@ export type Database = {
           },
         ]
       }
+      system_heartbeats: {
+        Row: {
+          id: number
+          last_ping: string
+        }
+        Insert: {
+          id?: number
+          last_ping?: string
+        }
+        Update: {
+          id?: number
+          last_ping?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           id: string
@@ -1614,6 +1697,10 @@ export type Database = {
         Returns: boolean
       }
       decline_invite: { Args: { p_token: string }; Returns: Json }
+      default_preferred_genders: {
+        Args: { p_gender: Database["public"]["Enums"]["profile_gender"] }
+        Returns: string[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -1622,8 +1709,6 @@ export type Database = {
         Returns: boolean
       }
       is_blocked: { Args: { _user1: string; _user2: string }; Returns: boolean }
-      show_limit: { Args: never; Returns: number }
-      show_trgm: { Args: { "": string }; Returns: string[] }
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
@@ -1639,6 +1724,7 @@ export type Database = {
         | "date_proposal"
         | "anniversary_surprise"
         | "custom_message"
+      profile_gender: "man" | "woman" | "other" | "prefer_not"
       relationship_status:
         | "single"
         | "talking_stage"
@@ -1660,12 +1746,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1689,11 +1775,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1714,11 +1800,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1739,11 +1825,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1756,11 +1842,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1787,6 +1873,7 @@ export const Constants = {
         "anniversary_surprise",
         "custom_message",
       ],
+      profile_gender: ["man", "woman", "other", "prefer_not"],
       relationship_status: [
         "single",
         "talking_stage",

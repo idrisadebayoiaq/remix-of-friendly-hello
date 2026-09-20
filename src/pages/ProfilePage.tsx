@@ -1,21 +1,24 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Settings, Camera, Edit3, MapPin, Heart, MessageCircle, Trophy, CheckCircle, Cake, Download } from 'lucide-react';
-import BackHeader from '@/components/BackHeader';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Settings, Camera, MapPin, Bell, Download, Cake, CheckCircle, Heart } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 import InstallPromptModal from '@/components/onboarding/InstallPromptModal';
+import { PROFILE_GENDERS, genderLabel } from '@/lib/dating';
+import { getFollowCounts, getHeartsReceived } from '@/lib/follows';
+import ProfilePostsGrid from '@/components/profile/ProfilePostsGrid';
+import { INTENT_OPTIONS } from '@/components/onboarding/OnboardingModal';
 
 const statusLabels: Record<string, string> = {
   single: '💚 Single', talking_stage: '💛 Talking Stage', dating: '💜 Dating', engaged: '💍 Engaged', married: '💕 Married',
@@ -32,22 +35,24 @@ const ProfilePage = () => {
   const [bio, setBio] = useState('');
   const [city, setCity] = useState('');
   const [country, setCountry] = useState('');
+  const [gender, setGender] = useState('');
   const [relationshipStatus, setRelationshipStatus] = useState('single');
   const [interests, setInterests] = useState<string[]>([]);
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [dobPublic, setDobPublic] = useState(true);
+  const [primaryIntent, setPrimaryIntent] = useState('');
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [showInstallModal, setShowInstallModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [postsCount, setPostsCount] = useState(0);
-  const [connectionsCount, setConnectionsCount] = useState(0);
   const [myPosts, setMyPosts] = useState<any[]>([]);
   const [myQuizResults, setMyQuizResults] = useState<any[]>([]);
   const [myMemories, setMyMemories] = useState<any[]>([]);
+  const [followingCount, setFollowingCount] = useState(0);
+  const [followersCount, setFollowersCount] = useState(0);
+  const [heartsCount, setHeartsCount] = useState(0);
 
-  // Keep view/edit form in sync with profile, but don't clobber in-progress edits
   useEffect(() => {
     if (!profile || editing) return;
     setFullName(profile.full_name || '');
@@ -55,43 +60,57 @@ const ProfilePage = () => {
     setBio(profile.bio || '');
     setCity(profile.city || '');
     setCountry((profile as any).country || '');
+    setGender((profile as any).gender || '');
     setRelationshipStatus(profile.relationship_status || 'single');
     setInterests(profile.interests || []);
     setDateOfBirth((profile as any).date_of_birth || '');
     setDobPublic((profile as any).dob_public ?? true);
+    setPrimaryIntent((profile as any).primary_intent || '');
   }, [profile, editing]);
 
-  const startEditing = () => {
+  const openEdit = () => {
     if (profile) {
       setFullName(profile.full_name || '');
       setUsername(profile.username || '');
       setBio(profile.bio || '');
       setCity(profile.city || '');
       setCountry((profile as any).country || '');
+      setGender((profile as any).gender || '');
       setRelationshipStatus(profile.relationship_status || 'single');
       setInterests(profile.interests || []);
       setDateOfBirth((profile as any).date_of_birth || '');
       setDobPublic((profile as any).dob_public ?? true);
+      setPrimaryIntent((profile as any).primary_intent || '');
     }
     setEditing(true);
   };
 
-  useEffect(() => {
+  const loadStats = useCallback(async () => {
     if (!user) return;
-    const loadStats = async () => {
-      const { count: pc } = await supabase.from('community_posts').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('is_deleted', false);
-      setPostsCount(pc || 0);
-      const { count: cc } = await supabase.from('connections').select('*', { count: 'exact', head: true });
-      setConnectionsCount(cc || 0);
-      const { data: posts } = await supabase.from('community_posts').select('*').eq('user_id', user.id).eq('is_deleted', false).order('created_at', { ascending: false }).limit(5);
-      setMyPosts(posts || []);
-      const { data: qr } = await supabase.from('quiz_results').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(10);
-      setMyQuizResults(qr || []);
-      const { data: mems } = await supabase.from('memories').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(20);
-      setMyMemories(mems || []);
-    };
-    loadStats();
+    const [{ data: posts }, { data: qr }, { data: mems }, counts, hearts] = await Promise.all([
+      supabase
+        .from('community_posts')
+        .select('id, content, image_url, video_url, media_type, thumbnail_url, likes_count, created_at')
+        .eq('user_id', user.id)
+        .eq('is_deleted', false)
+        .order('created_at', { ascending: false })
+        .limit(60),
+      supabase.from('quiz_results').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(10),
+      supabase.from('memories').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(20),
+      getFollowCounts(user.id),
+      getHeartsReceived(user.id),
+    ]);
+    setMyPosts(posts || []);
+    setMyQuizResults(qr || []);
+    setMyMemories(mems || []);
+    setFollowingCount(counts.following);
+    setFollowersCount(counts.followers);
+    setHeartsCount(hearts);
   }, [user]);
+
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
 
   const handleSave = async () => {
     const userId = user?.id || profile?.user_id;
@@ -115,7 +134,6 @@ const ProfilePage = () => {
 
     setSaving(true);
     try {
-      // Soft unique check so conflicts show a clear toast (not a silent failure)
       if (cleanUsername !== (profile?.username || '').toLowerCase()) {
         const { data: taken } = await supabase
           .from('profiles')
@@ -137,10 +155,12 @@ const ProfilePage = () => {
           bio: bio.trim() || null,
           city: city.trim() || null,
           country: country.trim() || null,
+          gender: gender || null,
           relationship_status: safeStatus as any,
           interests,
           date_of_birth: dateOfBirth || null,
           dob_public: dobPublic,
+          primary_intent: primaryIntent || null,
         } as any)
         .eq('user_id', userId)
         .select('user_id')
@@ -158,13 +178,12 @@ const ProfilePage = () => {
         return;
       }
 
-      // PostgREST can return no error + 0 rows when RLS blocks the update
       if (!data) {
         toast.error('Could not update profile. Please try again.');
         return;
       }
 
-      toast.success('Profile updated! 💕');
+      toast.success('Profile updated');
       await refreshProfile();
       setEditing(false);
     } catch (err: any) {
@@ -180,8 +199,14 @@ const ProfilePage = () => {
       toast.error('Please sign in again');
       return;
     }
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { toast.error('Only JPG, PNG, WEBP'); return; }
-    if (file.size > 5 * 1024 * 1024) { toast.error('Max 5MB'); return; }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      toast.error('Only JPG, PNG, WEBP');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Max 5MB');
+      return;
+    }
     setUploadingAvatar(true);
     try {
       const ext = file.name.split('.').pop();
@@ -202,7 +227,7 @@ const ProfilePage = () => {
         toast.error(error?.message || 'Failed to save avatar');
         return;
       }
-      toast.success('Avatar updated! 📸');
+      toast.success('Avatar updated');
       await refreshProfile();
     } finally {
       setUploadingAvatar(false);
@@ -210,7 +235,7 @@ const ProfilePage = () => {
   };
 
   const toggleInterest = (tag: string) => {
-    setInterests(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
+    setInterests((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
   };
 
   const handleInstallClose = async (installed?: boolean) => {
@@ -223,176 +248,264 @@ const ProfilePage = () => {
   const isStandalone = typeof window !== 'undefined' && window.matchMedia('(display-mode: standalone)').matches;
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="pb-4">
       {showInstallModal && <InstallPromptModal deferredPrompt={deferredPrompt} onClose={handleInstallClose} />}
-      
-      <BackHeader title="Profile" rightContent={<Button variant="ghost" size="icon" onClick={() => navigate('/settings')}><Settings size={20} className="text-muted-foreground" /></Button>} />
 
-      <Card className="shadow-md border-0 overflow-hidden">
-        <div className="h-20 lovli-gradient" />
-        <CardContent className="p-4 -mt-10">
-          <div className="flex items-end gap-3 mb-4">
-            <div className="relative">
-              <div className="w-16 h-16 rounded-full border-4 border-card bg-muted flex items-center justify-center overflow-hidden lovli-gradient text-primary-foreground text-xl font-bold">
-                {profile?.avatar_url ? <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" /> : profile?.full_name?.[0] || '?'}
-              </div>
-              <button onClick={() => fileInputRef.current?.click()} disabled={uploadingAvatar}
-                className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-md">
-                <Camera size={14} />
-              </button>
-              <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
-                onChange={e => { if (e.target.files?.[0]) handleAvatarUpload(e.target.files[0]); }} />
-            </div>
-            <div className="flex-1 pt-8">
-              <p className="font-bold">{profile?.full_name}</p>
-              <p className="text-xs text-muted-foreground">@{profile?.username}</p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="rounded-xl"
-              onClick={() => (editing ? setEditing(false) : startEditing())}
-            >
-              <Edit3 size={14} className="mr-1" /> {editing ? 'Cancel' : 'Edit'}
-            </Button>
-          </div>
-
-          {editing ? (
-            <div className="space-y-3">
-              <Input placeholder="Full Name" value={fullName} onChange={e => setFullName(e.target.value)} className="rounded-xl" />
-              <Input placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} className="rounded-xl" />
-              <Input value={profile?.email || user?.email || ''} disabled className="rounded-xl opacity-70" />
-              <p className="text-[10px] text-muted-foreground -mt-2">Email comes from signup and can’t be changed here</p>
-              <Textarea placeholder="Bio" value={bio} onChange={e => setBio(e.target.value)} className="rounded-xl" maxLength={200} />
-              <div className="grid grid-cols-2 gap-2">
-                <Input placeholder="City" value={city} onChange={e => setCity(e.target.value)} className="rounded-xl" />
-                <Input placeholder="Country" value={country} onChange={e => setCountry(e.target.value)} className="rounded-xl" />
-              </div>
-              <Select value={relationshipStatus} onValueChange={setRelationshipStatus}>
-                <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
-                <SelectContent>{Object.entries(statusLabels).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
-              </Select>
-              <div className="space-y-2">
-                <Label className="text-xs font-bold text-muted-foreground">Date of Birth</Label>
-                <Input type="date" value={dateOfBirth} onChange={e => setDateOfBirth(e.target.value)} className="rounded-xl" />
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs text-muted-foreground">Show DOB publicly</Label>
-                  <Switch checked={dobPublic} onCheckedChange={setDobPublic} />
-                </div>
-              </div>
-              <p className="text-xs font-bold text-muted-foreground">Interests</p>
-              <div className="flex flex-wrap gap-1">
-                {INTEREST_OPTIONS.map(tag => (
-                  <Button key={tag} size="sm" variant={interests.includes(tag) ? 'default' : 'outline'}
-                    className={`rounded-full text-[10px] h-6 ${interests.includes(tag) ? 'lovli-gradient text-primary-foreground' : ''}`}
-                    onClick={() => toggleInterest(tag)}>{tag}</Button>
-                ))}
-              </div>
-              <Button onClick={handleSave} disabled={saving} className="w-full rounded-2xl lovli-gradient text-primary-foreground font-bold">{saving ? 'Saving...' : 'Save Changes'}</Button>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {profile?.bio && <p className="text-sm text-muted-foreground">{profile.bio}</p>}
-              <p className="text-xs text-muted-foreground">{profile?.email || user?.email}</p>
-              <div className="flex flex-wrap gap-1">
-                <Badge variant="secondary" className="rounded-full">{statusLabels[profile?.relationship_status] || '💚 Single'}</Badge>
-                {profile?.love_language && <Badge variant="outline" className="rounded-full">❤️ {profile.love_language}</Badge>}
-                {(profile?.city || (profile as any)?.country) && (
-                  <Badge variant="outline" className="rounded-full"><MapPin size={10} className="mr-0.5" /> {[profile?.city, (profile as any)?.country].filter(Boolean).join(', ')}</Badge>
-                )}
-                <Badge variant="outline" className="rounded-full"><CheckCircle size={10} className="mr-0.5" /> Verified Email ✅</Badge>
-                {(profile as any)?.date_of_birth && (profile as any)?.dob_public && (
-                  <Badge variant="outline" className="rounded-full"><Cake size={10} className="mr-0.5" /> {new Date((profile as any).date_of_birth).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</Badge>
-                )}
-              </div>
-              {(profile?.interests?.length ?? 0) > 0 && (
-                <div className="flex flex-wrap gap-1 pt-1">
-                  {(profile?.interests || []).map((i: string) => <Badge key={i} variant="secondary" className="text-[10px] rounded-full">{i}</Badge>)}
-                </div>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Install App Button */}
-      {!isStandalone && (
-        <Button variant="outline" className="w-full rounded-2xl" onClick={() => setShowInstallModal(true)}>
-          <Download size={16} className="mr-2" /> Install Lovli App
+      <div className="flex items-center gap-2 px-4 pt-4 pb-2">
+        <h1 className="text-lg font-bold font-display flex-1 truncate">@{profile?.username || 'you'}</h1>
+        <Button variant="ghost" size="icon" onClick={() => navigate('/you/alerts')} title="Alerts">
+          <Bell size={20} className="text-muted-foreground" />
         </Button>
-      )}
-
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: 'Posts', value: postsCount, icon: MessageCircle },
-          { label: 'Connections', value: connectionsCount, icon: Heart },
-          { label: 'Quizzes', value: myQuizResults.length, icon: Trophy },
-        ].map(({ label, value, icon: Icon }) => (
-          <Card key={label} className="shadow-sm">
-            <CardContent className="p-3 text-center">
-              <Icon size={16} className="mx-auto text-primary mb-1" />
-              <p className="text-lg font-bold">{value}</p>
-              <p className="text-[10px] text-muted-foreground">{label}</p>
-            </CardContent>
-          </Card>
-        ))}
+        <Button variant="ghost" size="icon" onClick={() => navigate('/you/settings')}>
+          <Settings size={20} className="text-muted-foreground" />
+        </Button>
       </div>
 
-      {/* Content Tabs */}
-      <Tabs defaultValue="posts">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="posts">My Posts</TabsTrigger>
-          <TabsTrigger value="quizzes">Quizzes</TabsTrigger>
-          <TabsTrigger value="memories">Memories</TabsTrigger>
-        </TabsList>
-        <TabsContent value="posts" className="space-y-2 mt-3">
-          {myPosts.length === 0 ? <p className="text-center text-sm text-muted-foreground py-4">No posts yet</p> : (
-            <>
-              {myPosts.slice(0, 5).map(p => (
-                <Card key={p.id} className="shadow-sm">
-                  <CardContent className="p-3">
-                    <p className="text-sm">{p.content}</p>
-                    {p.image_url && <img src={p.image_url} alt="" className="w-full max-h-[150px] object-cover rounded-xl mt-2" />}
-                    <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
-                      <Heart size={10} /> {p.likes_count || 0}
-                      <MessageCircle size={10} /> {p.comments_count || 0}
-                      <span className="ml-auto">{new Date(p.created_at).toLocaleDateString()}</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-              {postsCount > 5 && (
-                <Button variant="outline" className="w-full rounded-2xl" onClick={() => navigate('/my-posts')}>
-                  See all posts ({postsCount})
-                </Button>
+      <div className="px-4 space-y-4">
+        <div className="flex items-center gap-4">
+          <div className="relative shrink-0">
+            <div className="w-[88px] h-[88px] rounded-full border-2 border-border bg-muted flex items-center justify-center overflow-hidden lovli-gradient text-primary-foreground text-3xl font-bold">
+              {profile?.avatar_url ? (
+                <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                profile?.full_name?.[0] || '?'
               )}
-            </>
+            </div>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingAvatar}
+              className="absolute -bottom-0.5 -right-0.5 w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-md"
+            >
+              <Camera size={14} />
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files?.[0]) handleAvatarUpload(e.target.files[0]);
+              }}
+            />
+          </div>
+
+          <div className="flex-1 grid grid-cols-3 gap-1 text-center">
+            <div>
+              <p className="text-lg font-bold tabular-nums">{followingCount}</p>
+              <p className="text-[10px] text-muted-foreground">Following</p>
+            </div>
+            <div>
+              <p className="text-lg font-bold tabular-nums">{followersCount}</p>
+              <p className="text-[10px] text-muted-foreground">Followers</p>
+            </div>
+            <div>
+              <p className="text-lg font-bold tabular-nums">{heartsCount}</p>
+              <p className="text-[10px] text-muted-foreground">Hearts</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <p className="font-bold text-base leading-tight">{profile?.full_name}</p>
+          {profile?.bio && <p className="text-sm text-muted-foreground whitespace-pre-wrap">{profile.bio}</p>}
+          <div className="flex flex-wrap gap-1 pt-1">
+            <Badge variant="secondary" className="rounded-full text-[10px]">
+              {statusLabels[profile?.relationship_status || ''] || '💚 Single'}
+            </Badge>
+            {genderLabel((profile as any)?.gender) && (
+              <Badge variant="outline" className="rounded-full text-[10px]">
+                {genderLabel((profile as any)?.gender)}
+              </Badge>
+            )}
+            {(profile?.city || (profile as any)?.country) && (
+              <Badge variant="outline" className="rounded-full text-[10px]">
+                <MapPin size={10} className="mr-0.5" />
+                {[profile?.city, (profile as any)?.country].filter(Boolean).join(', ')}
+              </Badge>
+            )}
+            {(profile as any)?.date_of_birth && (profile as any)?.dob_public && (
+              <Badge variant="outline" className="rounded-full text-[10px]">
+                <Cake size={10} className="mr-0.5" />
+                {new Date((profile as any).date_of_birth).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              </Badge>
+            )}
+            <Badge variant="outline" className="rounded-full text-[10px]">
+              <CheckCircle size={10} className="mr-0.5" /> Verified
+            </Badge>
+          </div>
+          {(profile?.interests?.length ?? 0) > 0 && (
+            <div className="flex flex-wrap gap-1 pt-1">
+              {(profile?.interests || []).map((i: string) => (
+                <Badge key={i} variant="secondary" className="text-[10px] rounded-full">
+                  {i}
+                </Badge>
+              ))}
+            </div>
           )}
+        </div>
+
+        <div className="flex gap-2">
+          <Button variant="secondary" className="flex-1 rounded-xl font-semibold" onClick={openEdit}>
+            Edit profile
+          </Button>
+          <Button variant="outline" className="flex-1 rounded-xl font-semibold" onClick={() => navigate('/meet?tab=dating')}>
+            <Heart size={14} className="mr-1" /> Dating card
+          </Button>
+        </div>
+        <p className="text-[10px] text-muted-foreground -mt-2">
+          Dating photos live under Meet → Dating only — not in this Discover posts grid.
+        </p>
+
+        {!isStandalone && (
+          <Button variant="outline" className="w-full rounded-xl" onClick={() => setShowInstallModal(true)}>
+            <Download size={16} className="mr-2" /> Install Lovli App
+          </Button>
+        )}
+      </div>
+
+      <Tabs defaultValue="posts" className="mt-4">
+        <TabsList className="w-full rounded-none border-b bg-transparent h-10 p-0">
+          <TabsTrigger
+            value="posts"
+            className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-foreground data-[state=active]:shadow-none"
+          >
+            Posts
+          </TabsTrigger>
+          <TabsTrigger
+            value="quizzes"
+            className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-foreground data-[state=active]:shadow-none"
+          >
+            Quizzes
+          </TabsTrigger>
+          <TabsTrigger
+            value="memories"
+            className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-foreground data-[state=active]:shadow-none"
+          >
+            Memories
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="posts" className="mt-0">
+          <ProfilePostsGrid posts={myPosts} emptyLabel="No Discover posts yet — share one from Discover" />
         </TabsContent>
-        <TabsContent value="quizzes" className="space-y-2 mt-3">
-          {myQuizResults.length === 0 ? <p className="text-center text-sm text-muted-foreground py-4">No quiz results</p> : myQuizResults.map(q => (
-            <Card key={q.id} className="shadow-sm">
-              <CardContent className="p-3">
+        <TabsContent value="quizzes" className="mt-3 px-4 space-y-2">
+          {myQuizResults.length === 0 ? (
+            <p className="text-center text-sm text-muted-foreground py-8">No quiz results</p>
+          ) : (
+            myQuizResults.map((q) => (
+              <div key={q.id} className="rounded-xl border p-3">
                 <p className="text-sm font-bold capitalize">{q.quiz_type.replace('_', ' ')} Quiz</p>
                 <p className="text-[10px] text-muted-foreground">{new Date(q.created_at).toLocaleDateString()}</p>
-              </CardContent>
-            </Card>
-          ))}
+              </div>
+            ))
+          )}
         </TabsContent>
-        <TabsContent value="memories" className="mt-3">
-          {myMemories.length === 0 ? <p className="text-center text-sm text-muted-foreground py-4">No memories</p> : (
+        <TabsContent value="memories" className="mt-3 px-4">
+          {myMemories.length === 0 ? (
+            <p className="text-center text-sm text-muted-foreground py-8">No memories</p>
+          ) : (
             <div className="grid grid-cols-2 gap-2">
-              {myMemories.map(m => (
-                <div key={m.id} className="relative rounded-xl overflow-hidden shadow-sm">
+              {myMemories.map((m) => (
+                <div key={m.id} className="relative rounded-xl overflow-hidden">
                   <img src={m.image_url} alt="" className="w-full aspect-square object-cover" />
-                  {m.caption && <div className="absolute bottom-0 left-0 right-0 bg-black/50 p-2"><p className="text-[10px] text-white">{m.caption}</p></div>}
+                  {m.caption && (
+                    <div className="absolute bottom-0 left-0 right-0 bg-black/50 p-2">
+                      <p className="text-[10px] text-white">{m.caption}</p>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
           )}
         </TabsContent>
       </Tabs>
+
+      <Sheet open={editing} onOpenChange={setEditing}>
+        <SheetContent side="bottom" className="h-[92vh] rounded-t-2xl overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>Edit profile</SheetTitle>
+          </SheetHeader>
+          <div className="space-y-3 mt-4 pb-8">
+            <Input placeholder="Full Name" value={fullName} onChange={(e) => setFullName(e.target.value)} className="rounded-xl" />
+            <Input placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} className="rounded-xl" />
+            <Input value={profile?.email || user?.email || ''} disabled className="rounded-xl opacity-70" />
+            <p className="text-[10px] text-muted-foreground -mt-2">Email comes from signup and can’t be changed here</p>
+            <Textarea placeholder="Bio" value={bio} onChange={(e) => setBio(e.target.value)} className="rounded-xl" maxLength={200} />
+            <div className="grid grid-cols-2 gap-2">
+              <Input placeholder="City" value={city} onChange={(e) => setCity(e.target.value)} className="rounded-xl" />
+              <Input placeholder="Country" value={country} onChange={(e) => setCountry(e.target.value)} className="rounded-xl" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-bold text-muted-foreground">Gender</Label>
+              <Select value={gender || undefined} onValueChange={setGender}>
+                <SelectTrigger className="rounded-xl">
+                  <SelectValue placeholder="Select gender" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROFILE_GENDERS.map((g) => (
+                    <SelectItem key={g.value} value={g.value}>
+                      {g.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">Needed for Meet Dating (men see women, women see men).</p>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-bold text-muted-foreground">Primary focus</Label>
+              <Select value={primaryIntent || undefined} onValueChange={setPrimaryIntent}>
+                <SelectTrigger className="rounded-xl">
+                  <SelectValue placeholder="What brings you here?" />
+                </SelectTrigger>
+                <SelectContent>
+                  {INTENT_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Select value={relationshipStatus} onValueChange={setRelationshipStatus}>
+              <SelectTrigger className="rounded-xl">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(statusLabels).map(([v, l]) => (
+                  <SelectItem key={v} value={v}>
+                    {l}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="space-y-2">
+              <Label className="text-xs font-bold text-muted-foreground">Date of Birth</Label>
+              <Input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className="rounded-xl" />
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">Show DOB publicly</Label>
+                <Switch checked={dobPublic} onCheckedChange={setDobPublic} />
+              </div>
+            </div>
+            <p className="text-xs font-bold text-muted-foreground">Interests</p>
+            <div className="flex flex-wrap gap-1">
+              {INTEREST_OPTIONS.map((tag) => (
+                <Button
+                  key={tag}
+                  size="sm"
+                  variant={interests.includes(tag) ? 'default' : 'outline'}
+                  className={`rounded-full text-[10px] h-6 ${interests.includes(tag) ? 'lovli-gradient text-primary-foreground' : ''}`}
+                  onClick={() => toggleInterest(tag)}
+                >
+                  {tag}
+                </Button>
+              ))}
+            </div>
+            <Button onClick={handleSave} disabled={saving} className="w-full rounded-2xl lovli-gradient text-primary-foreground font-bold">
+              {saving ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 };

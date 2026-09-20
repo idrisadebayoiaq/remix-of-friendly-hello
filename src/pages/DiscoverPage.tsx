@@ -8,12 +8,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Compass, Heart, UserPlus, Search, Send, MessageCircle, Image, Flag, X, Plus, MoreHorizontal, Pencil, Trash2, Share2, Reply, SmilePlus, Check, Video, Volume2, VolumeX, Play, Pause, Loader2, AlertCircle } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Compass, Heart, UserPlus, Search, Send, MessageCircle, Image, Flag, X, Plus, MoreHorizontal, Pencil, Trash2, Share2, Reply, SmilePlus, Video, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import FullScreenImageViewer from '@/components/FullScreenImageViewer';
+import TikTokFeed from '@/components/discover/TikTokFeed';
+import { followUser, getFollowingIds, unfollowUser } from '@/lib/follows';
 
 const CATEGORIES = ['All', 'Love Thoughts', 'Hobbies', 'Open Talk', 'Faith', 'Lifestyle', 'Other'];
 const REACTIONS = ['❤️', '😍', '😂', '😮', '😢', '😡'];
@@ -27,14 +29,14 @@ const statusLabels: Record<string, string> = {
 const containsBlockedContent = (text: string) => BLOCKED_WORDS.some(w => text.toLowerCase().includes(w));
 
 const DiscoverPage = () => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const navigate = useNavigate();
+  const { postId: routePostId } = useParams<{ postId?: string }>();
   const [posts, setPosts] = useState<any[]>([]);
   const [newPost, setNewPost] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [category, setCategory] = useState('Other');
   const [searchFilter, setSearchFilter] = useState('');
-  const [videoSearchFilter, setVideoSearchFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [posting, setPosting] = useState(false);
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
@@ -42,7 +44,7 @@ const DiscoverPage = () => {
   const [selectedVideo, setSelectedVideo] = useState<File | null>(null);
   const [videoPreview, setVideoPreview] = useState<string | null>(null);
   const [showCreatePost, setShowCreatePost] = useState(false);
-  const [discoverTab, setDiscoverTab] = useState('posts');
+  const [discoverTab, setDiscoverTab] = useState<'foryou' | 'following' | 'classic'>('foryou');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
 
@@ -58,12 +60,8 @@ const DiscoverPage = () => {
   const [editCommentText, setEditCommentText] = useState('');
   const [connectionStatus, setConnectionStatus] = useState<Record<string, { connected: boolean; connectionId?: string }>>({});
   const [fullScreenImage, setFullScreenImage] = useState<{ src: string; postId: string; liked: boolean; likeCount: number; commentCount: number; ownerId: string } | null>(null);
-
-  // Video feed state
+  const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
   const [videoPosts, setVideoPosts] = useState<any[]>([]);
-  const [currentVideoIdx, setCurrentVideoIdx] = useState(0);
-  const [videoMuted, setVideoMuted] = useState(false);
-  const videoContainerRef = useRef<HTMLDivElement>(null);
 
   const checkConnectionStatus = useCallback(async (userIds: string[]) => {
     if (!user) return;
@@ -80,15 +78,21 @@ const DiscoverPage = () => {
     setConnectionStatus(prev => ({ ...prev, ...results }));
   }, [user, connectionStatus]);
 
+  const loadFollowing = useCallback(async () => {
+    if (!user) return;
+    const ids = await getFollowingIds(user.id);
+    setFollowingIds(new Set(ids));
+  }, [user]);
+
   const loadPosts = useCallback(async () => {
     const { data } = await supabase.from('community_posts').select('*').eq('is_deleted', false).eq('is_flagged', false).order('created_at', { ascending: false }).limit(100);
     const enriched = await Promise.all((data || []).map(async (post) => {
-      const { data: profile } = await supabase.from('profiles').select('full_name, username, avatar_url, relationship_status').eq('user_id', post.user_id).single();
+      const { data: profileRow } = await supabase.from('profiles').select('full_name, username, avatar_url, relationship_status').eq('user_id', post.user_id).single();
       const { data: reactions } = await supabase.from('post_reactions').select('*').eq('post_id', post.id);
       const { count: likeCount } = await supabase.from('community_post_likes').select('*', { count: 'exact', head: true }).eq('post_id', post.id);
       const { data: myLike } = await supabase.from('community_post_likes').select('id').eq('post_id', post.id).eq('user_id', user!.id).maybeSingle();
       const { count: commentCount } = await supabase.from('post_comments').select('*', { count: 'exact', head: true }).eq('post_id', post.id).eq('is_deleted', false);
-      return { ...post, profiles: profile, reactions: reactions || [], like_count: likeCount || 0, my_like: myLike, comments_count: commentCount || 0 };
+      return { ...post, profiles: profileRow, reactions: reactions || [], like_count: likeCount || 0, my_like: myLike, comments_count: commentCount || 0 };
     }));
     setPosts(enriched);
     setVideoPosts(enriched.filter(p => (p as any).media_type === 'video' && (p as any).video_url));
@@ -96,7 +100,11 @@ const DiscoverPage = () => {
     checkConnectionStatus(authorIds);
   }, [user, checkConnectionStatus]);
 
-  useEffect(() => { if (user) loadPosts(); }, [user, loadPosts]);
+  useEffect(() => { if (user) { loadPosts(); loadFollowing(); } }, [user, loadPosts, loadFollowing]);
+
+  useEffect(() => {
+    if (routePostId) setDiscoverTab('foryou');
+  }, [routePostId]);
 
   // Realtime
   useEffect(() => {
@@ -383,21 +391,16 @@ const DiscoverPage = () => {
     loadComments(postId);
   };
 
-  // SEPARATE: Posts feed only shows text/image, Videos feed only shows video
   const filteredPosts = posts.filter(p => {
-    // Only text/image posts in Posts tab
-    if ((p as any).media_type === 'video') return false;
     if (categoryFilter !== 'All' && p.category !== categoryFilter) return false;
     if (!searchFilter.trim()) return true;
     const q = searchFilter.toLowerCase();
     return p.content?.toLowerCase().includes(q) || p.profiles?.full_name?.toLowerCase().includes(q) || p.profiles?.username?.toLowerCase().includes(q) || p.tags?.some((t: string) => t.toLowerCase().includes(q));
   });
 
-  const filteredVideos = videoPosts.filter(p => {
-    if (!videoSearchFilter.trim()) return true;
-    const q = videoSearchFilter.toLowerCase();
-    return p.content?.toLowerCase().includes(q) || p.profiles?.full_name?.toLowerCase().includes(q) || p.profiles?.username?.toLowerCase().includes(q) || p.tags?.some((t: string) => t.toLowerCase().includes(q));
-  });
+  const forYouPosts = posts;
+  const followingPosts = posts.filter((p) => followingIds.has(p.user_id));
+  const tikTokPosts = discoverTab === 'following' ? followingPosts : forYouPosts;
 
   const getReactionSummary = (reactions: any[]) => {
     const counts: Record<string, number> = {};
@@ -409,48 +412,37 @@ const DiscoverPage = () => {
     const all = comments[postId] || [];
     const filtered = all.filter(c => (c.parent_comment_id || null) === parentId);
     return filtered.map(c => (
-      <div key={c.id} className={`space-y-1 ${depth > 0 ? 'ml-6 border-l-2 border-border pl-3' : ''}`}>
-        <div className={`flex gap-2 text-xs ${c.is_deleted ? 'opacity-50' : ''}`}>
-          <div className="w-5 h-5 rounded-full lovli-gradient flex items-center justify-center text-primary-foreground text-[8px] font-bold overflow-hidden shrink-0 cursor-pointer"
+      <div key={c.id} className={`${depth > 0 ? 'ml-6 border-l-2 border-border pl-2' : ''}`}>
+        <div className="flex items-start gap-2 py-1.5">
+          <div className="w-6 h-6 rounded-full lovli-gradient flex items-center justify-center text-primary-foreground text-[9px] font-bold overflow-hidden shrink-0 cursor-pointer"
             onClick={() => c.profiles?.username && navigate(`/u/${c.profiles.username}`)}>
             {c.profiles?.avatar_url ? <img src={c.profiles.avatar_url} alt="" className="w-full h-full object-cover" /> : c.profiles?.full_name?.[0] || '?'}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1">
-              <span className="font-bold cursor-pointer hover:underline" onClick={() => c.profiles?.username && navigate(`/u/${c.profiles.username}`)}>{c.profiles?.full_name}</span>
-              {c.edited_at && <span className="text-muted-foreground text-[9px]">(edited)</span>}
-            </div>
+            <p className="text-xs font-bold">{c.profiles?.full_name || 'User'} <span className="font-normal text-muted-foreground">· {new Date(c.created_at).toLocaleDateString()}</span></p>
             {editingComment === c.id ? (
-              <div className="flex gap-1 mt-1">
-                <Input value={editCommentText} onChange={e => setEditCommentText(e.target.value)} className="rounded-xl text-xs h-7 flex-1" />
-                <Button size="sm" className="h-7 text-[10px] rounded-xl" onClick={() => saveEditComment(c.id, postId)}>Save</Button>
-                <Button size="sm" variant="ghost" className="h-7 text-[10px]" onClick={() => setEditingComment(null)}>✕</Button>
+              <div className="space-y-1 mt-1">
+                <Input value={editCommentText} onChange={e => setEditCommentText(e.target.value)} className="h-7 text-xs rounded-xl" />
+                <div className="flex gap-1">
+                  <Button size="sm" className="h-6 text-[10px] rounded-xl" onClick={() => saveEditComment(c.id, postId)}>Save</Button>
+                  <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setEditingComment(null)}>Cancel</Button>
+                </div>
               </div>
             ) : (
-              <p className="text-muted-foreground">{c.content}</p>
+              <p className="text-xs text-muted-foreground whitespace-pre-wrap">{c.content}</p>
             )}
-            {!c.is_deleted && (
-              <div className="flex items-center gap-2 mt-0.5">
-                <button className="text-muted-foreground hover:text-primary text-[10px]" onClick={() => { setReplyingTo(c.id); }}>Reply</button>
-                {REACTIONS.slice(0, 3).map(emoji => (
-                  <button key={emoji} className="text-[10px] hover:scale-125 transition-transform" onClick={() => reactToComment(c.id, emoji, postId)}>{emoji}</button>
-                ))}
-                {c.user_id === user?.id && !c.is_deleted && (
-                  <>
-                    <button className="text-muted-foreground hover:text-primary text-[10px]" onClick={() => { setEditingComment(c.id); setEditCommentText(c.content); }}>Edit</button>
-                    <button className="text-muted-foreground hover:text-destructive text-[10px]" onClick={() => deleteComment(c.id, postId)}>Delete</button>
-                  </>
-                )}
-                {c.user_id !== user?.id && !c.is_deleted && (
-                  <button className="text-muted-foreground hover:text-destructive text-[10px]" onClick={() => reportComment(c.id, c.user_id, postId)}>Report</button>
-                )}
-              </div>
-            )}
-            {c.reactions?.length > 0 && (
-              <div className="flex gap-0.5 mt-0.5">{getReactionSummary(c.reactions).map(([emoji, count]) => (
-                <span key={emoji} className="text-[10px] bg-muted px-1 rounded-full">{emoji}{count > 1 ? count : ''}</span>
-              ))}</div>
-            )}
+            <div className="flex items-center gap-2 mt-1">
+              <button className="text-[10px] text-muted-foreground" onClick={() => setReplyingTo(c.id)}>Reply</button>
+              {c.user_id === user?.id && (
+                <>
+                  <button className="text-[10px] text-muted-foreground" onClick={() => { setEditingComment(c.id); setEditCommentText(c.content); }}>Edit</button>
+                  <button className="text-[10px] text-destructive" onClick={() => deleteComment(c.id, postId)}>Delete</button>
+                </>
+              )}
+              {c.user_id !== user?.id && (
+                <button className="text-[10px] text-muted-foreground" onClick={() => reportComment(c.id, c.user_id, postId)}>Report</button>
+              )}
+            </div>
           </div>
         </div>
         {renderComments(postId, postOwnerId, c.id, depth + 1)}
@@ -474,138 +466,30 @@ const DiscoverPage = () => {
     );
   };
 
-  // Video Feed Item with full controls
-  const VideoFeedItem = ({ post, isActive }: { post: any; isActive: boolean }) => {
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const [paused, setPaused] = useState(false);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(false);
+  const handleFollow = async (userId: string) => {
+    const { error } = await followUser(user!.id, userId, profile?.full_name);
+    if (error) toast.error(error);
+    else {
+      setFollowingIds((prev) => new Set(prev).add(userId));
+      toast.success('Following');
+    }
+  };
 
-    useEffect(() => {
-      if (!videoRef.current) return;
-      if (isActive && !paused) {
-        videoRef.current.play().catch(() => {
-          // Autoplay blocked - require user interaction
-          setPaused(true);
-        });
-      } else {
-        videoRef.current.pause();
-      }
-    }, [isActive, paused]);
-
-    // Reset state when becoming active
-    useEffect(() => {
-      if (isActive) {
-        setPaused(false);
-        setError(false);
-      }
-    }, [isActive]);
-
-    const togglePlay = () => {
-      if (!videoRef.current) return;
-      if (error) {
-        setError(false);
-        setLoading(true);
-        videoRef.current.load();
-        videoRef.current.play().catch(() => setPaused(true));
-        return;
-      }
-      if (videoRef.current.paused) {
-        videoRef.current.play().catch(() => {});
-        setPaused(false);
-      } else {
-        videoRef.current.pause();
-        setPaused(true);
-      }
-    };
-
-    return (
-      <div className="relative w-full h-full bg-black flex items-center justify-center snap-start" onClick={togglePlay}>
-        <video
-          ref={videoRef}
-          src={(post as any).video_url}
-          className="w-full h-full object-contain"
-          loop
-          muted={videoMuted}
-          playsInline
-          preload={isActive ? 'auto' : 'metadata'}
-          onWaiting={() => setLoading(true)}
-          onPlaying={() => setLoading(false)}
-          onCanPlay={() => setLoading(false)}
-          onError={() => { setLoading(false); setError(true); }}
-        />
-
-        {/* Loading spinner */}
-        {loading && !error && isActive && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <Loader2 size={40} className="text-white animate-spin" />
-          </div>
-        )}
-
-        {/* Error state */}
-        {error && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/60 px-4 text-center">
-            <AlertCircle size={40} className="text-white mb-2" />
-            <p className="text-white text-sm">Tap to retry</p>
-            <a href={(post as any).video_url} target="_blank" rel="noreferrer" className="text-xs text-white underline underline-offset-4">
-              Open video
-            </a>
-          </div>
-        )}
-
-        {/* Paused overlay */}
-        {paused && !error && !loading && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="bg-black/40 rounded-full p-4">
-              <Play size={40} className="text-white" />
-            </div>
-          </div>
-        )}
-
-        {/* Bottom info */}
-        <div className="absolute bottom-16 left-4 right-16 text-white" onClick={e => e.stopPropagation()}>
-          <div className="flex items-center gap-2 mb-2 cursor-pointer" onClick={() => post.profiles?.username && navigate(`/u/${post.profiles.username}`)}>
-            <div className="w-8 h-8 rounded-full lovli-gradient flex items-center justify-center text-xs font-bold overflow-hidden">
-              {post.profiles?.avatar_url ? <img src={post.profiles.avatar_url} alt="" className="w-full h-full object-cover" /> : post.profiles?.full_name?.[0] || '?'}
-            </div>
-            <span className="font-bold text-sm">{post.profiles?.full_name}</span>
-          </div>
-          <p className="text-sm line-clamp-2">{post.content}</p>
-          {post.tags?.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-1">
-              {post.tags.map((t: string) => <span key={t} className="text-xs bg-white/20 px-1.5 rounded-full">#{t}</span>)}
-            </div>
-          )}
-        </div>
-
-        {/* Side actions */}
-        <div className="absolute right-3 bottom-24 flex flex-col gap-4 items-center" onClick={e => e.stopPropagation()}>
-          <button onClick={togglePlay} className="flex flex-col items-center">
-            {paused ? <Play size={28} className="text-white" /> : <Pause size={28} className="text-white" />}
-          </button>
-          <button onClick={() => handleLike(post.id, !!post.my_like, post.user_id)} className="flex flex-col items-center">
-            <Heart size={28} className={post.my_like ? 'text-red-500' : 'text-white'} fill={post.my_like ? 'currentColor' : 'none'} />
-            <span className="text-white text-xs">{post.like_count}</span>
-          </button>
-          <button onClick={() => { setCommentingOn(post.id); loadComments(post.id); }} className="flex flex-col items-center">
-            <MessageCircle size={28} className="text-white" />
-            <span className="text-white text-xs">{post.comments_count || 0}</span>
-          </button>
-          <button onClick={() => sharePost(post.id, post.user_id)} className="flex flex-col items-center">
-            <Share2 size={28} className="text-white" />
-            <span className="text-white text-xs">{(post as any).shares_count || ''}</span>
-          </button>
-          <button onClick={() => setVideoMuted(prev => !prev)} className="flex flex-col items-center">
-            {videoMuted ? <VolumeX size={24} className="text-white" /> : <Volume2 size={24} className="text-white" />}
-          </button>
-        </div>
-      </div>
-    );
+  const handleUnfollow = async (userId: string) => {
+    const { error } = await unfollowUser(user!.id, userId);
+    if (error) toast.error(error);
+    else {
+      setFollowingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(userId);
+        return next;
+      });
+      toast.success('Unfollowed');
+    }
   };
 
   return (
     <div className="space-y-0">
-      {/* Full screen image viewer */}
       {fullScreenImage && (
         <FullScreenImageViewer
           src={fullScreenImage.src}
@@ -619,280 +503,163 @@ const DiscoverPage = () => {
         />
       )}
 
-      <div className="p-4 pb-0">
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <h1 className="text-2xl font-bold font-display flex items-center gap-2"><Compass className="text-primary" size={24} /> Discover</h1>
-        </motion.div>
-
-        <Tabs value={discoverTab} onValueChange={setDiscoverTab} className="mt-2">
-          <TabsList className="grid w-full grid-cols-2 h-9">
-            <TabsTrigger value="posts" className="text-xs">📝 Posts</TabsTrigger>
-            <TabsTrigger value="videos" className="text-xs">🎬 Videos</TabsTrigger>
+      <div className="px-4 pt-3 pb-2 bg-background/95 backdrop-blur sticky top-0 z-20 border-b border-border">
+        <div className="flex items-center justify-between mb-2">
+          <h1 className="text-xl font-bold font-display flex items-center gap-2"><Compass className="text-primary" size={22} /> Discover</h1>
+          <Button size="icon" className="h-9 w-9 rounded-full lovli-gradient text-primary-foreground" onClick={() => setShowCreatePost(true)}>
+            <Plus size={18} />
+          </Button>
+        </div>
+        <Tabs value={discoverTab} onValueChange={(v) => setDiscoverTab(v as any)}>
+          <TabsList className="grid w-full grid-cols-3 h-9 rounded-xl">
+            <TabsTrigger value="foryou" className="text-xs rounded-lg">For You</TabsTrigger>
+            <TabsTrigger value="following" className="text-xs rounded-lg">Following</TabsTrigger>
+            <TabsTrigger value="classic" className="text-xs rounded-lg">Classic</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
 
-      {discoverTab === 'posts' ? (
-        <div className="p-4 pt-2 space-y-4">
-          <div className="space-y-2">
-            <div className="relative">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input placeholder="Search posts, tags, users..." value={searchFilter} onChange={e => setSearchFilter(e.target.value)} className="pl-9 rounded-xl" />
-            </div>
-            <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
-              {CATEGORIES.map(c => (
-                <Button key={c} size="sm" variant={categoryFilter === c ? 'default' : 'outline'}
-                  className={`rounded-full text-[10px] h-7 shrink-0 ${categoryFilter === c ? 'lovli-gradient text-primary-foreground' : ''}`}
-                  onClick={() => setCategoryFilter(c)}>{c}</Button>
+      <Dialog open={showCreatePost} onOpenChange={setShowCreatePost}>
+        <DialogContent className="max-w-[420px] rounded-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Create post</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <Textarea placeholder="What's on your mind? (max 500 chars)" value={newPost} onChange={e => setNewPost(e.target.value)} className="rounded-xl min-h-[80px]" maxLength={500} />
+            <div className="flex flex-wrap gap-1">
+              {INTEREST_OPTIONS.map(tag => (
+                <Button key={tag} size="sm" variant={selectedTags.includes(tag) ? 'default' : 'outline'}
+                  className={`rounded-full text-[10px] h-6 ${selectedTags.includes(tag) ? 'lovli-gradient text-primary-foreground' : ''}`}
+                  onClick={() => setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}>{tag}</Button>
               ))}
             </div>
-          </div>
-
-          <Card className="shadow-sm border-0 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setShowCreatePost(true)}>
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full lovli-gradient flex items-center justify-center text-primary-foreground"><Plus size={18} /></div>
-              <p className="text-sm text-muted-foreground">Share something about yourself...</p>
-            </CardContent>
-          </Card>
-
-          {/* Create Post Dialog */}
-          <Dialog open={showCreatePost} onOpenChange={setShowCreatePost}>
-            <DialogContent className="max-w-[420px] rounded-2xl max-h-[85vh] overflow-y-auto">
-              <DialogHeader><DialogTitle>Create Post</DialogTitle></DialogHeader>
-              <div className="space-y-3">
-                <Textarea placeholder="What's on your mind? (max 500 chars)" value={newPost} onChange={e => setNewPost(e.target.value)} className="rounded-xl min-h-[80px]" maxLength={500} />
-                <div className="flex items-center justify-between text-xs text-muted-foreground"><span>{newPost.length}/500</span></div>
-
-                <div className="flex flex-wrap gap-1">
-                  {INTEREST_OPTIONS.map(tag => (
-                    <Button key={tag} size="sm" variant={selectedTags.includes(tag) ? 'default' : 'outline'}
-                      className={`rounded-full text-[10px] h-6 ${selectedTags.includes(tag) ? 'lovli-gradient text-primary-foreground' : ''}`}
-                      onClick={() => setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}>{tag}</Button>
-                  ))}
-                </div>
-
-                <Select value={category} onValueChange={setCategory}>
-                  <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
-                  <SelectContent>{CATEGORIES.filter(c => c !== 'All').map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-                </Select>
-
-                <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleImageSelect} />
-                <input ref={videoInputRef} type="file" accept="video/mp4,video/webm,video/quicktime" className="hidden" onChange={handleVideoSelect} />
-
-                {imagePreview ? (
-                  <div className="relative">
-                    <img src={imagePreview} alt="Preview" className="w-full max-h-[200px] object-cover rounded-xl" />
-                    <Button size="icon" variant="destructive" className="absolute top-2 right-2 h-7 w-7 rounded-full" onClick={() => { setSelectedImage(null); setImagePreview(null); }}><X size={14} /></Button>
-                  </div>
-                ) : videoPreview ? (
-                  <div className="relative">
-                    <video src={videoPreview} className="w-full max-h-[200px] object-cover rounded-xl" controls />
-                    <Button size="icon" variant="destructive" className="absolute top-2 right-2 h-7 w-7 rounded-full" onClick={() => { setSelectedVideo(null); setVideoPreview(null); }}><X size={14} /></Button>
-                  </div>
-                ) : (
-                  <div className="flex gap-2">
-                    <Button variant="outline" className="flex-1 rounded-xl" onClick={() => fileInputRef.current?.click()}><Image size={14} className="mr-2" /> Photo</Button>
-                    <Button variant="outline" className="flex-1 rounded-xl" onClick={() => videoInputRef.current?.click()}><Video size={14} className="mr-2" /> Video (40s)</Button>
-                  </div>
-                )}
+            <Select value={category} onValueChange={setCategory}>
+              <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+              <SelectContent>{CATEGORIES.filter(c => c !== 'All').map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+            </Select>
+            <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleImageSelect} />
+            <input ref={videoInputRef} type="file" accept="video/mp4,video/webm,video/quicktime" className="hidden" onChange={handleVideoSelect} />
+            {imagePreview ? (
+              <div className="relative">
+                <img src={imagePreview} alt="Preview" className="w-full max-h-[200px] object-cover rounded-xl" />
+                <Button size="icon" variant="destructive" className="absolute top-2 right-2 h-7 w-7 rounded-full" onClick={() => { setSelectedImage(null); setImagePreview(null); }}><X size={14} /></Button>
               </div>
-              <DialogFooter>
-                <Button onClick={handlePost} disabled={posting || (!newPost.trim() && !selectedImage && !selectedVideo)} className="w-full rounded-2xl lovli-gradient text-primary-foreground font-bold">
-                  <Send size={14} className="mr-2" /> {posting ? 'Posting...' : 'Post'}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+            ) : videoPreview ? (
+              <div className="relative">
+                <video src={videoPreview} className="w-full max-h-[200px] object-cover rounded-xl" controls />
+                <Button size="icon" variant="destructive" className="absolute top-2 right-2 h-7 w-7 rounded-full" onClick={() => { setSelectedVideo(null); setVideoPreview(null); }}><X size={14} /></Button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1 rounded-xl" onClick={() => fileInputRef.current?.click()}><Image size={14} className="mr-2" /> Photo</Button>
+                <Button variant="outline" className="flex-1 rounded-xl" onClick={() => videoInputRef.current?.click()}><Video size={14} className="mr-2" /> Video (40s)</Button>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={handlePost} disabled={posting || (!newPost.trim() && !selectedImage && !selectedVideo)} className="w-full rounded-2xl lovli-gradient text-primary-foreground font-bold">
+              <Send size={14} className="mr-2" /> {posting ? 'Posting...' : 'Post'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-          {/* Feed - only text/image posts */}
+      {(discoverTab === 'foryou' || discoverTab === 'following') && (
+        <TikTokFeed
+          posts={tikTokPosts}
+          currentUserId={user?.id}
+          initialPostId={routePostId}
+          connectionStatus={connectionStatus}
+          followingIds={followingIds}
+          onLike={handleLike}
+          onComment={(id) => { setCommentingOn(id); loadComments(id); }}
+          onShare={sharePost}
+          onConnect={sendConnectionRequest}
+          onFollow={handleFollow}
+          onUnfollow={handleUnfollow}
+          onIndexChange={(_i, id) => {
+            if (typeof window !== 'undefined' && window.history?.replaceState) {
+              window.history.replaceState(null, '', `/post/${id}`);
+            }
+          }}
+        />
+      )}
+
+      {discoverTab === 'classic' && (
+        <div className="p-4 pt-2 space-y-4">
+          <div className="relative">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input placeholder="Search posts..." value={searchFilter} onChange={e => setSearchFilter(e.target.value)} className="pl-9 rounded-xl" />
+          </div>
+          <div className="flex gap-1.5 overflow-x-auto pb-1">
+            {CATEGORIES.map(c => (
+              <Button key={c} size="sm" variant={categoryFilter === c ? 'default' : 'outline'}
+                className={`rounded-full text-[10px] h-7 shrink-0 ${categoryFilter === c ? 'lovli-gradient text-primary-foreground' : ''}`}
+                onClick={() => setCategoryFilter(c)}>{c}</Button>
+            ))}
+          </div>
           <AnimatePresence>
-            {filteredPosts.length === 0 && <p className="text-center text-sm text-muted-foreground py-8">No posts yet. Be the first! ✨</p>}
+            {filteredPosts.length === 0 && <p className="text-center text-sm text-muted-foreground py-8">No posts yet</p>}
             {filteredPosts.map((post, i) => (
-              <motion.div key={post.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
+              <motion.div key={post.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.02 }}>
                 <Card className="shadow-sm">
                   <CardContent className="p-4 space-y-2">
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 rounded-full lovli-gradient flex items-center justify-center text-primary-foreground text-xs font-bold overflow-hidden cursor-pointer"
-                        onClick={(e) => { e.stopPropagation(); if (post.profiles?.username) navigate(`/u/${post.profiles.username}`); }}>
+                        onClick={() => post.profiles?.username && navigate(`/u/${post.profiles.username}`)}>
                         {post.profiles?.avatar_url ? <img src={post.profiles.avatar_url} alt="" className="w-full h-full object-cover" /> : post.profiles?.full_name?.[0] || '?'}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <p className="text-sm font-bold truncate cursor-pointer hover:underline"
-                            onClick={(e) => { e.stopPropagation(); if (post.profiles?.username) navigate(`/u/${post.profiles.username}`); }}>
-                            {post.profiles?.full_name || 'Anonymous'}
-                          </p>
-                          {post.profiles?.relationship_status && (
-                            <Badge variant="secondary" className="text-[8px] rounded-full px-1.5 py-0 h-4">{statusLabels[post.profiles.relationship_status] || post.profiles.relationship_status}</Badge>
-                          )}
-                        </div>
-                        <p className="text-[10px] text-muted-foreground">@{post.profiles?.username} · {new Date(post.created_at).toLocaleDateString()}</p>
+                        <p className="text-sm font-bold truncate">{post.profiles?.full_name || 'Anonymous'}</p>
+                        <p className="text-[10px] text-muted-foreground">@{post.profiles?.username}</p>
                       </div>
-                      <div className="flex gap-1">
-                        {post.user_id === user?.id && (
-                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setPostMenu(postMenu === post.id ? null : post.id)}><MoreHorizontal size={14} /></Button>
-                        )}
-                        {post.user_id !== user?.id && getConnectButton(post.user_id)}
-                      </div>
+                      {post.user_id !== user?.id && getConnectButton(post.user_id)}
                     </div>
-
-                    {postMenu === post.id && post.user_id === user?.id && (
-                      <div className="flex gap-1.5 bg-muted p-2 rounded-xl">
-                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setEditingPost(post.id); setEditPostText(post.content); setPostMenu(null); }}><Pencil size={12} className="mr-1" /> Edit</Button>
-                        <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={() => deletePost(post.id)}><Trash2 size={12} className="mr-1" /> Delete</Button>
-                      </div>
-                    )}
-
-                    {post.category && post.category !== 'Other' && <Badge variant="outline" className="text-[9px] rounded-full">{post.category}</Badge>}
-
-                    {editingPost === post.id ? (
-                      <div className="space-y-2">
-                        <Textarea value={editPostText} onChange={e => setEditPostText(e.target.value)} className="rounded-xl text-sm" maxLength={500} />
-                        <div className="flex gap-2">
-                          <Button size="sm" className="rounded-xl text-xs lovli-gradient text-primary-foreground" onClick={() => saveEditPost(post.id)}>Save</Button>
-                          <Button size="sm" variant="ghost" className="rounded-xl text-xs" onClick={() => setEditingPost(null)}>Cancel</Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-sm whitespace-pre-wrap">{post.content}</p>
-                    )}
-
+                    {post.content && <p className="text-sm whitespace-pre-wrap">{post.content}</p>}
                     {post.image_url && (
-                      <img
-                        src={post.image_url}
-                        alt=""
-                        className="w-full max-h-[300px] object-cover rounded-xl cursor-pointer"
-                        onClick={() => setFullScreenImage({ src: post.image_url, postId: post.id, liked: !!post.my_like, likeCount: post.like_count, commentCount: post.comments_count, ownerId: post.user_id })}
-                      />
+                      <img src={post.image_url} alt="" className="w-full max-h-[300px] object-cover rounded-xl cursor-pointer"
+                        onClick={() => setFullScreenImage({ src: post.image_url, postId: post.id, liked: !!post.my_like, likeCount: post.like_count, commentCount: post.comments_count, ownerId: post.user_id })} />
                     )}
-
-                    {post.tags?.length > 0 && (
-                      <div className="flex flex-wrap gap-1">{post.tags.map((tag: string) => <Badge key={tag} variant="secondary" className="text-[10px] rounded-full">{tag}</Badge>)}</div>
+                    {(post as any).video_url && (
+                      <video src={(post as any).video_url} className="w-full rounded-xl" controls playsInline />
                     )}
-
-                    {post.reactions?.length > 0 && (
-                      <div className="flex gap-1">{getReactionSummary(post.reactions).map(([emoji, count]) => (
-                        <span key={emoji} className="text-xs bg-muted px-1.5 py-0.5 rounded-full cursor-pointer hover:bg-accent" onClick={() => handleReaction(post.id, emoji, post.user_id)}>{emoji} {count}</span>
-                      ))}</div>
-                    )}
-
                     <div className="flex items-center gap-1 pt-1">
                       <Button variant="ghost" size="sm" className={`h-7 text-xs rounded-xl ${post.my_like ? 'text-primary' : ''}`} onClick={() => handleLike(post.id, !!post.my_like, post.user_id)}>
                         <Heart size={12} className="mr-1" fill={post.my_like ? 'currentColor' : 'none'} /> {post.like_count}
-                      </Button>
-                      <Button variant="ghost" size="sm" className="h-7 text-xs rounded-xl" onClick={() => setShowReactions(showReactions === post.id ? null : post.id)}>
-                        <SmilePlus size={12} />
                       </Button>
                       <Button variant="ghost" size="sm" className="h-7 text-xs rounded-xl" onClick={() => { setCommentingOn(commentingOn === post.id ? null : post.id); if (commentingOn !== post.id) loadComments(post.id); }}>
                         <MessageCircle size={12} className="mr-1" /> {post.comments_count || 0}
                       </Button>
                       <Button variant="ghost" size="sm" className="h-7 text-xs rounded-xl" onClick={() => sharePost(post.id, post.user_id)}>
-                        <Share2 size={12} className="mr-1" /> {(post as any).shares_count || ''}
+                        <Share2 size={12} />
                       </Button>
-                      {post.user_id !== user?.id && (
-                        <Button variant="ghost" size="sm" className="h-7 text-xs rounded-xl text-muted-foreground ml-auto" onClick={() => reportPost(post.id, post.user_id)}>
-                          <Flag size={12} />
-                        </Button>
-                      )}
                     </div>
-
-                    {showReactions === post.id && (
-                      <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} className="flex gap-1 bg-muted p-2 rounded-xl">
-                        {REACTIONS.map(emoji => (
-                          <button key={emoji} className="text-lg hover:scale-125 transition-transform" onClick={() => handleReaction(post.id, emoji, post.user_id)}>{emoji}</button>
-                        ))}
-                      </motion.div>
-                    )}
-
                     {commentingOn === post.id && (
-                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-2 pt-2 border-t border-border">
+                      <div className="space-y-2 pt-2 border-t border-border">
                         {renderComments(post.id, post.user_id)}
-                        {replyingTo && (
-                          <div className="flex items-center gap-1 text-[10px] text-primary">
-                            <Reply size={10} /> Replying to comment
-                            <button className="text-muted-foreground ml-1" onClick={() => setReplyingTo(null)}>✕</button>
-                          </div>
-                        )}
                         <div className="flex gap-2">
-                          <Input placeholder={replyingTo ? 'Write a reply...' : 'Add a comment...'} value={commentText} onChange={e => setCommentText(e.target.value)}
-                            className="rounded-xl text-xs h-8 flex-1" onKeyDown={e => e.key === 'Enter' && submitComment(post.id, post.user_id)} />
+                          <Input placeholder="Add a comment..." value={commentText} onChange={e => setCommentText(e.target.value)} className="rounded-xl text-xs h-8 flex-1"
+                            onKeyDown={e => e.key === 'Enter' && submitComment(post.id, post.user_id)} />
                           <Button size="sm" className="h-8 rounded-xl text-xs lovli-gradient text-primary-foreground" onClick={() => submitComment(post.id, post.user_id)}><Send size={12} /></Button>
                         </div>
-                      </motion.div>
+                      </div>
                     )}
                   </CardContent>
                 </Card>
               </motion.div>
             ))}
           </AnimatePresence>
-
-          <motion.div className="fixed bottom-20 right-4 z-40" whileTap={{ scale: 0.9 }}>
-            <Button size="icon" className="h-12 w-12 rounded-full lovli-gradient text-primary-foreground shadow-lg" onClick={() => setShowCreatePost(true)}>
-              <Plus size={24} />
-            </Button>
-          </motion.div>
-        </div>
-      ) : (
-        /* TikTok-style Video Feed */
-        <div className="relative" style={{ height: 'calc(100vh - 12rem)' }}>
-          {/* Video search */}
-          <div className="absolute top-2 left-4 right-4 z-10">
-            <div className="relative">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/60" />
-              <Input
-                placeholder="Search videos..."
-                value={videoSearchFilter}
-                onChange={e => setVideoSearchFilter(e.target.value)}
-                className="pl-8 rounded-xl bg-black/30 border-white/20 text-white placeholder:text-white/50 h-8 text-xs backdrop-blur-sm"
-              />
-            </div>
-          </div>
-
-          {filteredVideos.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center p-4">
-              <Video size={48} className="text-muted-foreground mb-3" />
-              <p className="text-sm text-muted-foreground">No videos yet. Be the first to post one! 🎬</p>
-              <Button className="mt-4 rounded-2xl lovli-gradient text-primary-foreground" onClick={() => setShowCreatePost(true)}>
-                <Plus size={16} className="mr-2" /> Create Video Post
-              </Button>
-            </div>
-          ) : (
-            <div
-              ref={videoContainerRef}
-              className="h-full overflow-y-scroll snap-y snap-mandatory scrollbar-hide"
-              onScroll={(e) => {
-                const el = e.currentTarget;
-                const idx = Math.round(el.scrollTop / el.clientHeight);
-                if (idx !== currentVideoIdx && idx >= 0 && idx < filteredVideos.length) setCurrentVideoIdx(idx);
-              }}
-            >
-              {filteredVideos.map((post, i) => (
-                <div key={post.id} className="h-full snap-start" style={{ height: 'calc(100vh - 12rem)' }}>
-                  <VideoFeedItem post={post} isActive={i === currentVideoIdx} />
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       )}
 
-      {/* Comment drawer for videos */}
-      {commentingOn && discoverTab === 'videos' && (
+      {commentingOn && (discoverTab === 'foryou' || discoverTab === 'following') && (
         <Dialog open={!!commentingOn} onOpenChange={() => setCommentingOn(null)}>
           <DialogContent className="max-w-[420px] rounded-2xl max-h-[70vh] overflow-y-auto">
             <DialogHeader><DialogTitle>Comments</DialogTitle></DialogHeader>
             <div className="space-y-2">
-              {renderComments(commentingOn, videoPosts.find(p => p.id === commentingOn)?.user_id || '')}
-              {replyingTo && (
-                <div className="flex items-center gap-1 text-[10px] text-primary">
-                  <Reply size={10} /> Replying to comment
-                  <button className="text-muted-foreground ml-1" onClick={() => setReplyingTo(null)}>✕</button>
-                </div>
-              )}
+              {renderComments(commentingOn, posts.find(p => p.id === commentingOn)?.user_id || '')}
               <div className="flex gap-2">
-                <Input placeholder={replyingTo ? 'Write a reply...' : 'Add a comment...'} value={commentText} onChange={e => setCommentText(e.target.value)}
-                  className="rounded-xl text-xs h-8 flex-1" onKeyDown={e => e.key === 'Enter' && submitComment(commentingOn, videoPosts.find(p => p.id === commentingOn)?.user_id || '')} />
-                <Button size="sm" className="h-8 rounded-xl text-xs lovli-gradient text-primary-foreground" onClick={() => submitComment(commentingOn, videoPosts.find(p => p.id === commentingOn)?.user_id || '')}><Send size={12} /></Button>
+                <Input placeholder="Add a comment..." value={commentText} onChange={e => setCommentText(e.target.value)}
+                  className="rounded-xl text-xs h-8 flex-1" onKeyDown={e => e.key === 'Enter' && submitComment(commentingOn, posts.find(p => p.id === commentingOn)?.user_id || '')} />
+                <Button size="sm" className="h-8 rounded-xl text-xs lovli-gradient text-primary-foreground" onClick={() => submitComment(commentingOn, posts.find(p => p.id === commentingOn)?.user_id || '')}><Send size={12} /></Button>
               </div>
             </div>
           </DialogContent>

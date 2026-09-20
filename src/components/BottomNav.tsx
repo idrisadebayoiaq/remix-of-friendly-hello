@@ -1,16 +1,16 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { Home, Compass, MessageCircle, Users, Bell } from 'lucide-react';
+import { Home, Compass, HeartHandshake, MessageCircle, UserRound } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 
 const tabs = [
-  { to: '/home', icon: Home, label: 'Home' },
-  { to: '/discover', icon: Compass, label: 'Discover' },
-  { to: '/friends', icon: Users, label: 'Friends' },
-  { to: '/chats', icon: MessageCircle, label: 'Chats' },
-  { to: '/notifications', icon: Bell, label: 'Alerts' },
+  { to: '/home', icon: Home, label: 'Home', match: (p: string) => p === '/' || p.startsWith('/home') },
+  { to: '/discover', icon: Compass, label: 'Discover', match: (p: string) => p.startsWith('/discover') || p.startsWith('/post/') },
+  { to: '/meet', icon: HeartHandshake, label: 'Meet', match: (p: string) => p.startsWith('/meet') || p.startsWith('/ask') || p.startsWith('/find-love') || p.startsWith('/friends') },
+  { to: '/chats', icon: MessageCircle, label: 'Chats', match: (p: string) => p.startsWith('/chats') || p.startsWith('/connection/') },
+  { to: '/you', icon: UserRound, label: 'You', match: (p: string) => p.startsWith('/you') || p.startsWith('/profile') || p.startsWith('/settings') || p.startsWith('/notifications') },
 ];
 
 const BottomNav = () => {
@@ -39,9 +39,9 @@ const BottomNav = () => {
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border shadow-lg">
       <div className="mx-auto max-w-[480px] flex items-center justify-around h-16 px-2">
-        {tabs.map(({ to, icon: Icon, label }) => {
-          const isActive = location.pathname === to || location.pathname.startsWith(to + '/');
-          const showBadge = to === '/notifications' && unreadCount > 0;
+        {tabs.map(({ to, icon: Icon, label, match }) => {
+          const isActive = match(location.pathname);
+          const showBadge = to === '/you' && unreadCount > 0;
           return (
             <NavLink key={to} to={to} className="flex flex-col items-center justify-center gap-0.5 flex-1 py-1 relative">
               <motion.div

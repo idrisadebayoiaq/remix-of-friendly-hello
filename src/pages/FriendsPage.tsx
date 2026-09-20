@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Search, Users, UserPlus, MapPin, Share2, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { createNotification, NOTIFICATION_TYPES } from '@/lib/notificationTypes';
 import { toast } from 'sonner';
 
 const statusLabels: Record<string, string> = {
@@ -17,24 +18,38 @@ const statusLabels: Record<string, string> = {
 const FriendsPage = () => {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const embedded = location.pathname.startsWith('/meet');
   const [searchQuery, setSearchQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
   const [connectedUserIds, setConnectedUserIds] = useState<Set<string>>(new Set());
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
+  const [sendingId, setSendingId] = useState<string | null>(null);
 
-  // Load connected user IDs
+  // Load connected + pending friendship request IDs
   const loadConnections = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase.from('connections').select('user1_id, user2_id')
-      .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
-      .not('status', 'in', '("ended","blocked")');
+    const [{ data }, { data: pending }] = await Promise.all([
+      supabase.from('connections').select('user1_id, user2_id')
+        .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+        .not('status', 'in', '("ended","blocked")'),
+      supabase.from('connection_requests').select('sender_id, receiver_id')
+        .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+        .eq('status', 'pending'),
+    ]);
     const ids = new Set<string>();
     (data || []).forEach(c => {
       if (c.user1_id === user.id) ids.add(c.user2_id);
       else ids.add(c.user1_id);
     });
     setConnectedUserIds(ids);
+    const pendingSet = new Set<string>();
+    (pending || []).forEach((r: any) => {
+      pendingSet.add(r.sender_id === user.id ? r.receiver_id : r.sender_id);
+    });
+    setPendingIds(pendingSet);
     return ids;
   }, [user]);
 
@@ -76,19 +91,37 @@ const FriendsPage = () => {
   }, [user]);
 
   const sendRequest = async (receiverId: string) => {
-    const { data: existing } = await supabase.from('connection_requests').select('id')
-      .or(`and(sender_id.eq.${user!.id},receiver_id.eq.${receiverId}),and(sender_id.eq.${receiverId},receiver_id.eq.${user!.id})`)
-      .eq('status', 'pending').maybeSingle();
-    if (existing) { toast.info('Request already pending'); return; }
+    if (!user) return;
+    setSendingId(receiverId);
+    try {
+      const { data: existing } = await supabase.from('connection_requests').select('id')
+        .or(`and(sender_id.eq.${user.id},receiver_id.eq.${receiverId}),and(sender_id.eq.${receiverId},receiver_id.eq.${user.id})`)
+        .eq('status', 'pending').maybeSingle();
+      if (existing) { toast.info('Friendship request already pending'); return; }
 
-    const { data: conn } = await supabase.from('connections').select('id')
-      .or(`and(user1_id.eq.${user!.id},user2_id.eq.${receiverId}),and(user1_id.eq.${receiverId},user2_id.eq.${user!.id})`)
-      .not('status', 'in', '("ended","blocked")').maybeSingle();
-    if (conn) { toast.info('Already connected!'); return; }
+      const { data: conn } = await supabase.from('connections').select('id')
+        .or(`and(user1_id.eq.${user.id},user2_id.eq.${receiverId}),and(user1_id.eq.${receiverId},user2_id.eq.${user.id})`)
+        .not('status', 'in', '("ended","blocked")').maybeSingle();
+      if (conn) { toast.info('Already connected!'); return; }
 
-    await supabase.from('connection_requests').insert({ sender_id: user!.id, receiver_id: receiverId });
-    await supabase.from('notifications').insert({ user_id: receiverId, type: 'connection_request', title: 'New Connection Request 💕', message: 'Someone wants to connect!', data: { sender_id: user!.id } });
-    toast.success('Request sent! 💕');
+      const { error } = await supabase.from('connection_requests').insert({ sender_id: user.id, receiver_id: receiverId });
+      if (error) {
+        toast.error(error.code === '23505' ? 'Request already sent' : 'Failed to send');
+        return;
+      }
+      await createNotification({
+        userId: receiverId,
+        type: NOTIFICATION_TYPES.connection_request,
+        title: 'New friendship request',
+        message: `${profile?.full_name || 'Someone'} wants to connect as friends`,
+        actorId: user.id,
+        data: { sender_id: user.id, url: '/home' },
+      });
+      setPendingIds((prev) => new Set(prev).add(receiverId));
+      toast.success('Friendship request sent');
+    } finally {
+      setSendingId(null);
+    }
   };
 
   const shareInvite = async () => {
@@ -124,10 +157,18 @@ const FriendsPage = () => {
             </div>
             {isConnected ? (
               <Badge variant="outline" className="rounded-xl text-[10px] shrink-0">
-                <Check size={10} className="mr-0.5" /> Connected
+                <Check size={10} className="mr-0.5" /> Friends
               </Badge>
+            ) : pendingIds.has(p.user_id) ? (
+              <Badge variant="secondary" className="rounded-xl text-[10px] shrink-0">Pending</Badge>
             ) : (
-              <Button size="sm" variant="outline" className="rounded-xl h-7 text-xs shrink-0" onClick={e => { e.stopPropagation(); sendRequest(p.user_id); }}>
+              <Button
+                size="sm"
+                variant="outline"
+                className="rounded-xl h-7 text-xs shrink-0"
+                disabled={sendingId === p.user_id}
+                onClick={(e) => { e.stopPropagation(); sendRequest(p.user_id); }}
+              >
                 <UserPlus size={12} className="mr-1" /> Connect
               </Button>
             )}
@@ -140,8 +181,14 @@ const FriendsPage = () => {
   return (
     <div className="p-4 space-y-4">
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-        <h1 className="text-2xl font-bold font-display flex items-center gap-2"><Users className="text-primary" size={24} /> Friends</h1>
-        <p className="text-sm text-muted-foreground">Find people & make connections</p>
+        {!embedded && (
+          <h1 className="text-2xl font-bold font-display flex items-center gap-2"><Users className="text-primary" size={24} /> Friends</h1>
+        )}
+        <p className="text-sm text-muted-foreground">
+          {embedded
+            ? 'Friendship search — Connect creates a friends bond (not dating).'
+            : 'Find people & send friendship connects'}
+        </p>
       </motion.div>
 
       <div className="relative">
