@@ -1524,6 +1524,8 @@ export type Database = {
           install_prompt_dismissed_at: string | null
           install_prompt_installed: boolean | null
           invite_notifications: boolean | null
+          last_love_tip: string | null
+          last_love_tip_at: string | null
           onboarding_completed_at: string | null
           preferred_install_prompt: boolean | null
           profile_visibility: boolean | null

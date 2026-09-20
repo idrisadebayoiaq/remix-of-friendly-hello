@@ -152,21 +152,55 @@ const HomePage = () => {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Load AI tip
+  // Load AI tip — regenerate at most once every 24 hours
   useEffect(() => {
     if (!user) return;
+    const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+    const fallbackTip = 'Small gestures make the biggest impact. ❤️';
+
     const loadTip = async () => {
       setAiTipLoading(true);
       try {
-        const { data } = await supabase.functions.invoke('quiz-ai', {
+        const { data: settings } = await supabase
+          .from('user_settings')
+          .select('last_love_tip, last_love_tip_at')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        const cachedTip = (settings as any)?.last_love_tip as string | null | undefined;
+        const cachedAt = (settings as any)?.last_love_tip_at as string | null | undefined;
+
+        if (cachedTip && cachedAt) {
+          const ageMs = Date.now() - new Date(cachedAt).getTime();
+          if (ageMs < TWENTY_FOUR_HOURS_MS) {
+            setAiTip(cachedTip);
+            setAiTipLoading(false);
+            return;
+          }
+        }
+
+        const { data, error } = await supabase.functions.invoke('quiz-ai', {
           body: { quizType: 'love-tip', inputs: {} },
         });
-        setAiTip(data?.result || 'Love is patient, love is kind. ❤️');
+
+        if (error) throw error;
+
+        const tip = (data?.result || fallbackTip).trim() || fallbackTip;
+        setAiTip(tip);
+
+        await supabase
+          .from('user_settings')
+          .update({
+            last_love_tip: tip,
+            last_love_tip_at: new Date().toISOString(),
+          } as any)
+          .eq('user_id', user.id);
       } catch {
-        setAiTip('Small gestures make the biggest impact. ❤️');
+        setAiTip(fallbackTip);
       }
       setAiTipLoading(false);
     };
+
     loadTip();
   }, [user]);
 
@@ -354,7 +388,7 @@ const HomePage = () => {
           <CardContent className="p-4 flex items-start gap-3">
             <Quote size={20} className="text-primary-foreground mt-0.5 shrink-0" />
             <div className="flex-1">
-              <p className="text-[10px] text-primary-foreground/70 font-bold mb-1">✨ AI Love Tip</p>
+              <p className="text-[10px] text-primary-foreground/70 font-bold mb-1">✨ AI Love Tip · refreshes daily</p>
               {aiTipLoading ? <Loader2 size={16} className="text-primary-foreground animate-spin" /> : <p className="text-primary-foreground text-sm font-medium">{aiTip}</p>}
             </div>
           </CardContent>
