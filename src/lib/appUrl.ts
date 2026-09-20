@@ -16,8 +16,12 @@ export function shareUrl(path: string): string {
   return `${base}${p}`;
 }
 
-/** Optional direct APK download URL (GitHub Release, R2, etc.). */
-export function getApkDownloadUrl(): string | null {
-  const url = (import.meta.env.VITE_APK_DOWNLOAD_URL as string | undefined)?.trim();
-  return url || null;
+/** Latest preview APK (EAS). Prefer VITE_APK_DOWNLOAD_URL so releases can swap without code changes. */
+const DEFAULT_APK_DOWNLOAD_URL =
+  'https://expo.dev/artifacts/eas/njOHKmP07rVyH_ldT11rSnaYAp4laWyqL1HD0JeNhdk.apk';
+
+/** Direct APK download URL (env override, else latest known preview build). */
+export function getApkDownloadUrl(): string {
+  const fromEnv = (import.meta.env.VITE_APK_DOWNLOAD_URL as string | undefined)?.trim();
+  return fromEnv || DEFAULT_APK_DOWNLOAD_URL;
 }

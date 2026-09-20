@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Heart, X, Check, Clock, AlertCircle, Download, MessageCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { getApkDownloadUrl } from '@/lib/appUrl';
 
 const typeLabels: Record<string, string> = {
   be_my_valentine: '💝 Be My Valentine',
@@ -188,14 +189,16 @@ const InviteViewPage = () => {
 
             {outcome.kind === 'accepted' ? (
               <>
-                <Button
-                  className="w-full rounded-2xl h-12 lovli-gradient text-primary-foreground font-bold"
-                  onClick={() => navigate(getAppPath)}
-                >
-                  <Download size={16} className="mr-2" /> Download Lovli APK
+                <Button asChild className="w-full rounded-2xl h-12 lovli-gradient text-primary-foreground font-bold">
+                  <a href={getApkDownloadUrl()} download target="_blank" rel="noopener noreferrer">
+                    <Download size={16} className="mr-2" /> Download Lovli APK
+                  </a>
                 </Button>
                 <Button variant="outline" className="w-full rounded-2xl h-11" onClick={() => navigate(nextWeb)}>
                   <MessageCircle size={16} className="mr-2" /> Continue on website
+                </Button>
+                <Button variant="ghost" className="w-full rounded-2xl h-10 text-sm" onClick={() => navigate(getAppPath)}>
+                  Install help / more options
                 </Button>
               </>
             ) : (
@@ -203,8 +206,10 @@ const InviteViewPage = () => {
                 <Button variant="outline" className="w-full rounded-2xl h-11" onClick={() => navigate('/home')}>
                   Continue on website
                 </Button>
-                <Button variant="ghost" className="w-full rounded-2xl h-10 text-sm" onClick={() => navigate(getAppPath)}>
-                  <Download size={14} className="mr-2" /> Optional: get the APK
+                <Button asChild variant="ghost" className="w-full rounded-2xl h-10 text-sm">
+                  <a href={getApkDownloadUrl()} download target="_blank" rel="noopener noreferrer">
+                    <Download size={14} className="mr-2" /> Optional: download APK
+                  </a>
                 </Button>
               </>
             )}

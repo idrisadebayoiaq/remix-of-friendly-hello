@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Download, X, Smartphone, Monitor, Apple } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { getApkDownloadUrl } from '@/lib/appUrl';
 
 interface InstallPromptModalProps {
   deferredPrompt: any | null;
@@ -15,6 +16,7 @@ const InstallPromptModal = ({ deferredPrompt, onClose }: InstallPromptModalProps
 
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
   const isAndroid = /Android/.test(navigator.userAgent);
+  const apkUrl = getApkDownloadUrl();
 
   const handleInstall = async () => {
     if (!deferredPrompt) return;
@@ -36,15 +38,14 @@ const InstallPromptModal = ({ deferredPrompt, onClose }: InstallPromptModalProps
         className="w-full max-w-[400px] bg-card rounded-3xl shadow-2xl overflow-hidden"
       >
         <div className="p-6 space-y-5">
-          {/* Header */}
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-2xl lovli-gradient flex items-center justify-center shadow-md">
                 <Download size={22} className="text-primary-foreground" />
               </div>
               <div>
-                <h3 className="font-bold font-display text-lg">Install Lovli 💕</h3>
-                <p className="text-xs text-muted-foreground">App-like experience on your home screen</p>
+                <h3 className="font-bold font-display text-lg">Install Lovli</h3>
+                <p className="text-xs text-muted-foreground">Android APK or home-screen shortcut</p>
               </div>
             </div>
             <button onClick={() => onClose(false, dontShow)} className="text-muted-foreground hover:text-foreground">
@@ -52,23 +53,30 @@ const InstallPromptModal = ({ deferredPrompt, onClose }: InstallPromptModalProps
             </button>
           </div>
 
-          {/* Content */}
+          {!isIOS && (
+            <Button asChild className="w-full rounded-2xl lovli-gradient text-primary-foreground font-bold h-12">
+              <a href={apkUrl} download target="_blank" rel="noopener noreferrer">
+                <Download size={18} className="mr-2" />
+                Download Android APK
+              </a>
+            </Button>
+          )}
+
           {deferredPrompt ? (
             <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">Install Lovli for faster access, offline support, and push notifications.</p>
+              <p className="text-sm text-muted-foreground">Or install the web app to your home screen:</p>
               <Button
-                className="w-full rounded-2xl lovli-gradient text-primary-foreground font-bold h-12"
+                className="w-full rounded-2xl h-11"
+                variant="outline"
                 onClick={handleInstall}
                 disabled={installing}
               >
-                <Download size={18} className="mr-2" />
-                {installing ? 'Installing...' : 'Install Lovli'}
+                <Smartphone size={18} className="mr-2" />
+                {installing ? 'Installing...' : 'Add to home screen'}
               </Button>
             </div>
           ) : (
             <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">Add Lovli to your home screen for the best experience:</p>
-              
               {isIOS ? (
                 <div className="bg-muted/50 rounded-2xl p-4 space-y-2">
                   <div className="flex items-center gap-2 text-sm font-bold">
@@ -76,36 +84,28 @@ const InstallPromptModal = ({ deferredPrompt, onClose }: InstallPromptModalProps
                   </div>
                   <ol className="text-xs text-muted-foreground space-y-1.5 list-decimal list-inside">
                     <li>Tap the <strong>Share</strong> button (square with arrow)</li>
-                    <li>Scroll and tap <strong>"Add to Home Screen"</strong></li>
-                    <li>Tap <strong>"Add"</strong> to confirm</li>
+                    <li>Scroll and tap <strong>&quot;Add to Home Screen&quot;</strong></li>
+                    <li>Tap <strong>&quot;Add&quot;</strong> to confirm</li>
                   </ol>
                 </div>
               ) : isAndroid ? (
-                <div className="bg-muted/50 rounded-2xl p-4 space-y-2">
-                  <div className="flex items-center gap-2 text-sm font-bold">
-                    <Smartphone size={16} /> Android
-                  </div>
-                  <ol className="text-xs text-muted-foreground space-y-1.5 list-decimal list-inside">
-                    <li>Tap the <strong>⋮ menu</strong> (three dots)</li>
-                    <li>Tap <strong>"Add to Home screen"</strong></li>
-                    <li>Tap <strong>"Add"</strong> to confirm</li>
-                  </ol>
-                </div>
+                <p className="text-xs text-muted-foreground text-center">
+                  After download, open the APK and allow install from this browser if prompted. Package:{' '}
+                  <code className="text-[10px]">com.lovli.app</code>
+                </p>
               ) : (
                 <div className="bg-muted/50 rounded-2xl p-4 space-y-2">
                   <div className="flex items-center gap-2 text-sm font-bold">
                     <Monitor size={16} /> Desktop
                   </div>
-                  <ol className="text-xs text-muted-foreground space-y-1.5 list-decimal list-inside">
-                    <li>Click the <strong>install icon</strong> in the address bar</li>
-                    <li>Or click <strong>⋮ menu → Install Lovli</strong></li>
-                  </ol>
+                  <p className="text-xs text-muted-foreground">
+                    Download the APK above for Android phones, or use your browser&apos;s install icon for the web app.
+                  </p>
                 </div>
               )}
             </div>
           )}
 
-          {/* Don't show again */}
           <div className="flex items-center gap-2">
             <Checkbox
               id="dontShow"
@@ -113,11 +113,10 @@ const InstallPromptModal = ({ deferredPrompt, onClose }: InstallPromptModalProps
               onCheckedChange={(v) => setDontShow(!!v)}
             />
             <label htmlFor="dontShow" className="text-xs text-muted-foreground cursor-pointer">
-              Don't show again
+              Don&apos;t show again
             </label>
           </div>
 
-          {/* Close */}
           <Button
             variant="ghost"
             className="w-full rounded-2xl text-muted-foreground"
