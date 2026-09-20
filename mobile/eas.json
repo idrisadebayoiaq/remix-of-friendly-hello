@@ -1,0 +1,32 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://pgehtqrhrqvlnikdfarz.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBnZWh0cXJocnF2bG5pa2RmYXJ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk4ODYyNTAsImV4cCI6MjEwNTQ2MjI1MH0.GRN-9m1ffGgNf9F1zBPxkPxJJ7NgzO275mghryK9gfA",
+        "EXPO_PUBLIC_APP_URL": "https://lovlimatch.vercel.app"
+      }
+    },
+    "production": {
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://pgehtqrhrqvlnikdfarz.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBnZWh0cXJocnF2bG5pa2RmYXJ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk4ODYyNTAsImV4cCI6MjEwNTQ2MjI1MH0.GRN-9m1ffGgNf9F1zBPxkPxJJ7NgzO275mghryK9gfA",
+        "EXPO_PUBLIC_APP_URL": "https://lovlimatch.vercel.app"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

@@ -16,6 +16,7 @@ import { getSoundEnabled, setSoundEnabled } from '@/lib/sounds';
 import NotificationPreferences from '@/components/settings/NotificationPreferences';
 import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 import InstallPromptModal from '@/components/onboarding/InstallPromptModal';
+import { isLovliNativeApp } from '@/lib/appUrl';
 
 const CURRENCIES = [
   { code: 'USD', symbol: '$', name: 'US Dollar' },
@@ -71,7 +72,9 @@ const SettingsPage = () => {
   const [country, setCountry] = useState((profile as any)?.country || '');
   const deferredPrompt = useInstallPrompt();
   const [showInstallModal, setShowInstallModal] = useState(false);
-  const isStandalone = typeof window !== 'undefined' && window.matchMedia('(display-mode: standalone)').matches;
+  const isStandalone =
+    (typeof window !== 'undefined' && window.matchMedia('(display-mode: standalone)').matches) ||
+    isLovliNativeApp();
 
   useEffect(() => {
     if (!profile) return;

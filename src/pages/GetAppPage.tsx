@@ -1,13 +1,14 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Download, Globe, Smartphone } from 'lucide-react';
-import { getApkDownloadUrl, shareUrl } from '@/lib/appUrl';
+import { getApkDownloadUrl, isLovliNativeApp, shareUrl } from '@/lib/appUrl';
 
 /**
  * APK-first landing: Download Lovli + optional continue on web.
  * Query: ?next=/path&reason=accepted|declined|explore
+ * Inside the native app shell, skip download and continue to next.
  */
 const GetAppPage = () => {
   const navigate = useNavigate();
@@ -15,6 +16,16 @@ const GetAppPage = () => {
   const next = params.get('next') || '/home';
   const reason = params.get('reason') || 'explore';
   const apkUrl = getApkDownloadUrl();
+  const inNative = isLovliNativeApp();
+
+  useEffect(() => {
+    if (!inNative) return;
+    if (next.startsWith('http')) {
+      window.location.href = next;
+      return;
+    }
+    navigate(next, { replace: true });
+  }, [inNative, next, navigate]);
 
   const copy = useMemo(() => {
     if (reason === 'accepted') {
@@ -42,6 +53,14 @@ const GetAppPage = () => {
     }
     navigate(next);
   };
+
+  if (inNative) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <p className="text-sm text-muted-foreground">Opening Lovli…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">

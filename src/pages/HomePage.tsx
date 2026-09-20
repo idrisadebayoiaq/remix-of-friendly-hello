@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import OnboardingModal from '@/components/onboarding/OnboardingModal';
 import InstallPromptModal from '@/components/onboarding/InstallPromptModal';
 import { useInstallPrompt } from '@/hooks/useInstallPrompt';
+import { isLovliNativeApp } from '@/lib/appUrl';
 import { resolveNotificationPath } from '@/lib/notificationNav';
 import { createNotification, NOTIFICATION_TYPES } from '@/lib/notificationTypes';
 import { INTENT_OPTIONS } from '@/components/onboarding/OnboardingModal';
@@ -57,6 +58,7 @@ const HomePage = () => {
 
       if ((data as any).install_prompt_installed || !(data as any).preferred_install_prompt) return;
       if (window.matchMedia('(display-mode: standalone)').matches) return;
+      if (isLovliNativeApp()) return;
 
       const dismissedAt = (data as any).install_prompt_dismissed_at;
       const cooldownDays = (data as any).install_prompt_cooldown_days || 7;

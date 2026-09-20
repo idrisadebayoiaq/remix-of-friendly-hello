@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Heart, X, Check, Clock, AlertCircle, Download, MessageCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { getApkDownloadUrl } from '@/lib/appUrl';
+import { getApkDownloadUrl, isLovliNativeApp } from '@/lib/appUrl';
 
 const typeLabels: Record<string, string> = {
   be_my_valentine: '💝 Be My Valentine',
@@ -183,34 +183,55 @@ const InviteViewPage = () => {
             </h2>
             <p className="text-sm text-muted-foreground">
               {outcome.kind === 'accepted'
-                ? 'Download the Android APK and sign in with the same account to chat on your phone — or continue on the website now.'
-                : 'You can both keep using Lovli. Download the app anytime to explore as a normal user — it’s optional.'}
+                ? isLovliNativeApp()
+                  ? 'You’re connected. Continue in the app with the same account — Chats and your bond are ready.'
+                  : 'Download the Android APK and sign in with the same account to chat on your phone — or continue on the website now.'
+                : isLovliNativeApp()
+                  ? 'You can keep exploring Lovli in the app as a normal user.'
+                  : 'You can both keep using Lovli. Download the app anytime to explore as a normal user — it’s optional.'}
             </p>
 
             {outcome.kind === 'accepted' ? (
               <>
-                <Button asChild className="w-full rounded-2xl h-12 lovli-gradient text-primary-foreground font-bold">
-                  <a href={getApkDownloadUrl()} download target="_blank" rel="noopener noreferrer">
-                    <Download size={16} className="mr-2" /> Download Lovli APK
-                  </a>
-                </Button>
-                <Button variant="outline" className="w-full rounded-2xl h-11" onClick={() => navigate(nextWeb)}>
-                  <MessageCircle size={16} className="mr-2" /> Continue on website
-                </Button>
-                <Button variant="ghost" className="w-full rounded-2xl h-10 text-sm" onClick={() => navigate(getAppPath)}>
-                  Install help / more options
-                </Button>
+                {isLovliNativeApp() ? (
+                  <Button
+                    className="w-full rounded-2xl h-12 lovli-gradient text-primary-foreground font-bold"
+                    onClick={() => navigate(nextWeb)}
+                  >
+                    <MessageCircle size={16} className="mr-2" /> Continue in app
+                  </Button>
+                ) : (
+                  <>
+                    <Button asChild className="w-full rounded-2xl h-12 lovli-gradient text-primary-foreground font-bold">
+                      <a href={getApkDownloadUrl()} download target="_blank" rel="noopener noreferrer">
+                        <Download size={16} className="mr-2" /> Download Lovli APK
+                      </a>
+                    </Button>
+                    <Button variant="outline" className="w-full rounded-2xl h-11" onClick={() => navigate(nextWeb)}>
+                      <MessageCircle size={16} className="mr-2" /> Continue on website
+                    </Button>
+                    <Button variant="ghost" className="w-full rounded-2xl h-10 text-sm" onClick={() => navigate(getAppPath)}>
+                      Install help / more options
+                    </Button>
+                  </>
+                )}
               </>
             ) : (
               <>
-                <Button variant="outline" className="w-full rounded-2xl h-11" onClick={() => navigate('/home')}>
-                  Continue on website
+                <Button
+                  variant="outline"
+                  className="w-full rounded-2xl h-11"
+                  onClick={() => navigate('/home')}
+                >
+                  {isLovliNativeApp() ? 'Continue in app' : 'Continue on website'}
                 </Button>
-                <Button asChild variant="ghost" className="w-full rounded-2xl h-10 text-sm">
-                  <a href={getApkDownloadUrl()} download target="_blank" rel="noopener noreferrer">
-                    <Download size={14} className="mr-2" /> Optional: download APK
-                  </a>
-                </Button>
+                {!isLovliNativeApp() && (
+                  <Button asChild variant="ghost" className="w-full rounded-2xl h-10 text-sm">
+                    <a href={getApkDownloadUrl()} download target="_blank" rel="noopener noreferrer">
+                      <Download size={14} className="mr-2" /> Optional: download APK
+                    </a>
+                  </Button>
+                )}
               </>
             )}
           </CardContent>

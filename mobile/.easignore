@@ -1,0 +1,22 @@
+# EAS upload ignore — keep google-services.json included for FCM (not listed here)
+node_modules/
+.expo/
+dist/
+web-build/
+.kotlin/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.DS_Store
+*.pem
+.env
+.env*.local
+*.tsbuildinfo
+/ios
+/android
+.claude/

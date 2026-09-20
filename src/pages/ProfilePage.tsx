@@ -15,6 +15,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 import InstallPromptModal from '@/components/onboarding/InstallPromptModal';
+import { isLovliNativeApp } from '@/lib/appUrl';
 import { PROFILE_GENDERS, genderLabel } from '@/lib/dating';
 import { getFollowCounts, getHeartsReceived } from '@/lib/follows';
 import ProfilePostsGrid from '@/components/profile/ProfilePostsGrid';
@@ -245,7 +246,9 @@ const ProfilePage = () => {
     }
   };
 
-  const isStandalone = typeof window !== 'undefined' && window.matchMedia('(display-mode: standalone)').matches;
+  const isStandalone =
+    (typeof window !== 'undefined' && window.matchMedia('(display-mode: standalone)').matches) ||
+    isLovliNativeApp();
 
   return (
     <div className="pb-4">

@@ -1,30 +1,21 @@
-# Lovli mobile (Expo) — Phase 9 APK first
+# Lovli mobile (Expo)
 
-**Android package:** `com.lovli.app`  
-**Scheme:** `lovli://` (secondary only)
+Full Lovli product in the APK via an authenticated **WebView shell** of `https://lovlimatch.vercel.app` — same screens, login/signup, invites, chats, and features as the website.
 
-## Invite flow (locked)
+## Behaviour
 
-1. Share **HTTPS** `https://YOUR_DOMAIN/invite?token=…` (from APK or web).
-2. Recipient Accept/Decline on the **website**.
-3. After **Yes** → `/get-app?reason=accepted` (Download APK + Continue on web).
-4. After **No** → optional soft Download only.
-5. Same-account login in APK → Chats already has the bond.
+- **Signup / login:** same website Auth page (email, username, gender, terms).
+- **Invite shares:** always HTTPS (`EXPO_PUBLIC_APP_URL`). Recipients Accept/Decline on the web; after Yes/No they can continue on web or download the APK.
+- **Same account:** log in on the APK → Supabase session restores Home / Chats / connection state.
+- **Push:** native FCM → `device_push_tokens` → `send-fcm` Edge Function. Notification icon + channel `lovli-default`.
+- **Icons:** generated from `assets/lovli-icon-master.png` via `node scripts/generate-icons.mjs`.
 
-## Setup
-
-1. Copy repo-root `google-services.json` → `mobile/google-services.json` (do not commit).
-2. Edge secret `FIREBASE_SERVICE_ACCOUNT_JSON` = Admin SDK JSON (already for `send-fcm`).
-3. Env:
-   - `EXPO_PUBLIC_SUPABASE_URL`
-   - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
-   - `EXPO_PUBLIC_APP_URL` (same as web `VITE_PUBLIC_APP_URL`)
-4. Web env: `VITE_PUBLIC_APP_URL`, `VITE_APK_DOWNLOAD_URL` (when APK is hosted).
-
-## Scripts
+## Build
 
 ```bash
 cd mobile
-npm start
-# later: eas build -p android --profile preview
+# google-services.json must exist locally OR as EAS file env GOOGLE_SERVICES_JSON
+npx eas-cli build --platform android --profile preview --non-interactive
 ```
+
+Env (eas.json preview): `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, `EXPO_PUBLIC_APP_URL`.
