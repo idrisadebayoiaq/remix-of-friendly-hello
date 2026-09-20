@@ -28,14 +28,15 @@ const ProfilePage = () => {
   const navigate = useNavigate();
   const deferredPrompt = useInstallPrompt();
   const [editing, setEditing] = useState(false);
-  const [fullName, setFullName] = useState(profile?.full_name || '');
-  const [bio, setBio] = useState(profile?.bio || '');
-  const [city, setCity] = useState(profile?.city || '');
-  const [country, setCountry] = useState((profile as any)?.country || '');
-  const [relationshipStatus, setRelationshipStatus] = useState(profile?.relationship_status || 'single');
-  const [interests, setInterests] = useState<string[]>(profile?.interests || []);
-  const [dateOfBirth, setDateOfBirth] = useState((profile as any)?.date_of_birth || '');
-  const [dobPublic, setDobPublic] = useState((profile as any)?.dob_public ?? true);
+  const [fullName, setFullName] = useState('');
+  const [username, setUsername] = useState('');
+  const [bio, setBio] = useState('');
+  const [city, setCity] = useState('');
+  const [country, setCountry] = useState('');
+  const [relationshipStatus, setRelationshipStatus] = useState('single');
+  const [interests, setInterests] = useState<string[]>([]);
+  const [dateOfBirth, setDateOfBirth] = useState('');
+  const [dobPublic, setDobPublic] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [showInstallModal, setShowInstallModal] = useState(false);
@@ -46,6 +47,20 @@ const ProfilePage = () => {
   const [myPosts, setMyPosts] = useState<any[]>([]);
   const [myQuizResults, setMyQuizResults] = useState<any[]>([]);
   const [myMemories, setMyMemories] = useState<any[]>([]);
+
+  // Keep edit form in sync with profile loaded from signup / DB
+  useEffect(() => {
+    if (!profile) return;
+    setFullName(profile.full_name || '');
+    setUsername(profile.username || '');
+    setBio(profile.bio || '');
+    setCity(profile.city || '');
+    setCountry((profile as any).country || '');
+    setRelationshipStatus(profile.relationship_status || 'single');
+    setInterests(profile.interests || []);
+    setDateOfBirth((profile as any).date_of_birth || '');
+    setDobPublic((profile as any).dob_public ?? true);
+  }, [profile]);
 
   useEffect(() => {
     if (!user) return;
@@ -65,12 +80,40 @@ const ProfilePage = () => {
   }, [user]);
 
   const handleSave = async () => {
+    if (!profile?.user_id) return;
+    const cleanUsername = username.toLowerCase().replace(/[^a-z0-9_]/g, '').trim();
+    if (cleanUsername.length < 3) {
+      toast.error('Username must be at least 3 characters');
+      return;
+    }
+    if (!fullName.trim()) {
+      toast.error('Full name is required');
+      return;
+    }
+
     setSaving(true);
-    await supabase.from('profiles').update({
-      full_name: fullName.trim(), bio: bio.trim(), city: city.trim(),
-      country: country.trim(), relationship_status: relationshipStatus as any, interests,
-      date_of_birth: dateOfBirth || null, dob_public: dobPublic,
-    } as any).eq('user_id', profile?.user_id);
+    const { error } = await supabase.from('profiles').update({
+      full_name: fullName.trim(),
+      username: cleanUsername,
+      bio: bio.trim(),
+      city: city.trim(),
+      country: country.trim(),
+      relationship_status: relationshipStatus as any,
+      interests,
+      date_of_birth: dateOfBirth || null,
+      dob_public: dobPublic,
+    } as any).eq('user_id', profile.user_id);
+
+    if (error) {
+      if (error.message?.toLowerCase().includes('unique') || error.code === '23505') {
+        toast.error('That username is already taken');
+      } else {
+        toast.error(error.message || 'Failed to update profile');
+      }
+      setSaving(false);
+      return;
+    }
+
     toast.success('Profile updated! 💕');
     await refreshProfile();
     setEditing(false);
@@ -136,6 +179,9 @@ const ProfilePage = () => {
           {editing ? (
             <div className="space-y-3">
               <Input placeholder="Full Name" value={fullName} onChange={e => setFullName(e.target.value)} className="rounded-xl" />
+              <Input placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} className="rounded-xl" />
+              <Input value={profile?.email || user?.email || ''} disabled className="rounded-xl opacity-70" />
+              <p className="text-[10px] text-muted-foreground -mt-2">Email comes from signup and can’t be changed here</p>
               <Textarea placeholder="Bio" value={bio} onChange={e => setBio(e.target.value)} className="rounded-xl" maxLength={200} />
               <div className="grid grid-cols-2 gap-2">
                 <Input placeholder="City" value={city} onChange={e => setCity(e.target.value)} className="rounded-xl" />
@@ -166,6 +212,7 @@ const ProfilePage = () => {
           ) : (
             <div className="space-y-2">
               {profile?.bio && <p className="text-sm text-muted-foreground">{profile.bio}</p>}
+              <p className="text-xs text-muted-foreground">{profile?.email || user?.email}</p>
               <div className="flex flex-wrap gap-1">
                 <Badge variant="secondary" className="rounded-full">{statusLabels[profile?.relationship_status] || '💚 Single'}</Badge>
                 {profile?.love_language && <Badge variant="outline" className="rounded-full">❤️ {profile.love_language}</Badge>}
