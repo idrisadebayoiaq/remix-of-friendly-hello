@@ -23,6 +23,7 @@ google-services*.json
 *-firebase-adminsdk-*.json
 **/firebase-adminsdk*.json
 service-account*.json
+mobile/google-services.json
 
 # Cursor
 .cursor/

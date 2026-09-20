@@ -14,6 +14,7 @@ import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 import { resolveNotificationPath } from '@/lib/notificationNav';
 import { createNotification, NOTIFICATION_TYPES } from '@/lib/notificationTypes';
 import { INTENT_OPTIONS } from '@/components/onboarding/OnboardingModal';
+import { shareUrl } from '@/lib/appUrl';
 
 const typeLabels: Record<string, string> = {
   be_my_valentine: '💝 Be My Valentine', date_proposal: '🌹 Date Proposal',
@@ -265,7 +266,7 @@ const HomePage = () => {
   };
 
   const resendInvite = async (invite: any) => {
-    const link = `${window.location.origin}/invite?token=${invite.token}`;
+    const link = shareUrl(`/invite?token=${invite.token}`);
     if (navigator.share) {
       await navigator.share({ title: 'Lovli Invite 💕', text: `You've been sent a special invite on Lovli!`, url: link });
     } else {

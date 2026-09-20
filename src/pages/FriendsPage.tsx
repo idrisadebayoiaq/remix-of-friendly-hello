@@ -9,6 +9,7 @@ import { Search, Users, UserPlus, MapPin, Share2, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { createNotification, NOTIFICATION_TYPES } from '@/lib/notificationTypes';
+import { shareUrl } from '@/lib/appUrl';
 import { toast } from 'sonner';
 
 const statusLabels: Record<string, string> = {
@@ -125,7 +126,7 @@ const FriendsPage = () => {
   };
 
   const shareInvite = async () => {
-    const url = `${window.location.origin}/invite`;
+    const url = shareUrl('/invite');
     if (navigator.share) {
       await navigator.share({ title: 'Join me on Lovli 💕', url });
     } else {

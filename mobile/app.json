@@ -1,0 +1,68 @@
+{
+  "expo": {
+    "name": "Lovli",
+    "slug": "lovli",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "scheme": "lovli",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.lovli.app"
+    },
+    "android": {
+      "package": "com.lovli.app",
+      "googleServicesFile": "./google-services.json",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "*",
+              "pathPrefix": "/invite"
+            },
+            {
+              "scheme": "https",
+              "host": "*",
+              "pathPrefix": "/get-app"
+            },
+            {
+              "scheme": "https",
+              "host": "*",
+              "pathPrefix": "/post"
+            },
+            {
+              "scheme": "https",
+              "host": "*",
+              "pathPrefix": "/u"
+            },
+            {
+              "scheme": "https",
+              "host": "*",
+              "pathPrefix": "/connection"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "replace-after-eas-init"
+      }
+    }
+  }
+}

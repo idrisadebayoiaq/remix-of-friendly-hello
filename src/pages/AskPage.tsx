@@ -12,6 +12,7 @@ import { Heart, Share2, Copy, Check } from 'lucide-react';
 import BackHeader from '@/components/BackHeader';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
+import { shareUrl } from '@/lib/appUrl';
 
 const inviteTypes = [
   { value: 'be_my_valentine', label: '💝 Be My Valentine' },
@@ -71,7 +72,7 @@ const AskPage = () => {
       return;
     }
 
-    const link = `${window.location.origin}/invite?token=${token}`;
+    const link = shareUrl(`/invite?token=${token}`);
     setGeneratedLink(link);
     toast.success('Invite link created! 💕');
     setSending(false);

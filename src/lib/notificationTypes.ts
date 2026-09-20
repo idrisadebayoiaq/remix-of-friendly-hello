@@ -134,6 +134,18 @@ export async function createNotification({
     } catch (err) {
       console.warn('send-push invoke failed', err);
     }
+    try {
+      await supabase.functions.invoke('send-fcm', {
+        body: {
+          user_id: userId,
+          title,
+          message,
+          data: payload,
+        },
+      });
+    } catch (err) {
+      console.warn('send-fcm invoke failed', err);
+    }
   }
 
   return { id: row?.id };

@@ -25,6 +25,7 @@ import UserPostsPage from "@/pages/UserPostsPage";
 import MyPostsPage from "@/pages/MyPostsPage";
 import NotificationsPage from "@/pages/NotificationsPage";
 import GrowPage from "@/pages/GrowPage";
+import GetAppPage from "@/pages/GetAppPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -49,6 +50,7 @@ const App = () => (
           <Routes>
             <Route path="/auth" element={<AuthPage />} />
             <Route path="/invite" element={<InviteViewPage />} />
+            <Route path="/get-app" element={<GetAppPage />} />
             <Route element={<ProtectedRoutes />}>
               <Route path="/" element={<HomePage />} />
               <Route path="/home" element={<HomePage />} />

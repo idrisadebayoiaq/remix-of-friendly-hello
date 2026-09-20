@@ -16,6 +16,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import FullScreenImageViewer from '@/components/FullScreenImageViewer';
 import TikTokFeed from '@/components/discover/TikTokFeed';
 import { followUser, getFollowingIds, unfollowUser } from '@/lib/follows';
+import { shareUrl } from '@/lib/appUrl';
 
 const CATEGORIES = ['All', 'Love Thoughts', 'Hobbies', 'Open Talk', 'Faith', 'Lifestyle', 'Other'];
 const REACTIONS = ['❤️', '😍', '😂', '😮', '😢', '😡'];
@@ -348,7 +349,7 @@ const DiscoverPage = () => {
   };
 
   const sharePost = async (postId: string, postOwnerId: string) => {
-    const url = `${window.location.origin}/post/${postId}`;
+    const url = shareUrl(`/post/${postId}`);
 
     const applyShareDelta = (items: any[], delta: number) => items.map(post => post.id === postId ? { ...post, shares_count: Math.max((post.shares_count || 0) + delta, 0) } : post);
     setPosts(prev => applyShareDelta(prev, 1));
