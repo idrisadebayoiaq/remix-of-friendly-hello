@@ -1,0 +1,16 @@
+project_id = "pgehtqrhrqvlnikdfarz"
+
+[functions.send-invite-email]
+verify_jwt = false
+
+[functions.quiz-ai]
+verify_jwt = false
+
+[functions.get-invite]
+verify_jwt = false
+
+[functions.generate-vapid-keys]
+verify_jwt = false
+
+[functions.send-push]
+verify_jwt = false

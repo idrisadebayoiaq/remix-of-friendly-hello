@@ -1,0 +1,108 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=Quicksand:wght@400;500;600;700&display=swap');
+
+@layer base {
+  :root {
+    --background: 340 100% 98%;
+    --foreground: 0 0% 10%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 10%;
+
+    --primary: 340 82% 42%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 282 65% 41%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 340 30% 94%;
+    --muted-foreground: 0 0% 40%;
+
+    --accent: 340 100% 95%;
+    --accent-foreground: 340 82% 42%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 340 30% 90%;
+    --input: 340 30% 90%;
+    --ring: 340 82% 42%;
+
+    --radius: 1rem;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 340 82% 42%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 340 100% 95%;
+    --sidebar-accent-foreground: 340 82% 42%;
+    --sidebar-border: 340 30% 90%;
+    --sidebar-ring: 340 82% 42%;
+  }
+
+  .dark {
+    --background: 340 20% 8%;
+    --foreground: 340 10% 95%;
+
+    --card: 340 20% 12%;
+    --card-foreground: 340 10% 95%;
+
+    --popover: 340 20% 12%;
+    --popover-foreground: 340 10% 95%;
+
+    --primary: 340 82% 52%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 282 65% 51%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 340 20% 18%;
+    --muted-foreground: 340 10% 65%;
+
+    --accent: 340 40% 18%;
+    --accent-foreground: 340 82% 72%;
+
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 340 20% 20%;
+    --input: 340 20% 20%;
+    --ring: 340 82% 52%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+    font-family: 'Nunito', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Quicksand', sans-serif;
+  }
+}
+
+@layer utilities {
+  .lovli-gradient {
+    background: linear-gradient(135deg, hsl(340, 82%, 42%), hsl(282, 65%, 41%));
+  }
+  
+  .lovli-text-gradient {
+    background: linear-gradient(135deg, hsl(340, 82%, 42%), hsl(282, 65%, 41%));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}
